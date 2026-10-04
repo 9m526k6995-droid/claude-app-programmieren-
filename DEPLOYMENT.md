@@ -28,8 +28,9 @@ Umgebungsvariablen jeweils in den Projekteinstellungen eintragen.
 Der Workflow `.github/workflows/deploy-pages.yml` ist schon fertig.
 
 1. Repo → **Settings** → **Pages** → Source: **GitHub Actions**.
-2. Optional unter **Settings → Secrets and variables → Actions → Variables** die Variablen `ZWIP_PUBLIC_URL`, `ZWIP_SUPABASE_URL`, `ZWIP_SUPABASE_ANON_KEY` anlegen.
-3. Auf `main` pushen oder den Workflow unter **Actions** manuell starten.
+2. Repo → **Settings → Secrets and variables → Actions → Variables**: Variable `ZWIP_PAGES` mit Wert `true` anlegen (schaltet den Workflow ein).
+3. Optional unter **Settings → Secrets and variables → Actions → Variables** die Variablen `ZWIP_PUBLIC_URL`, `ZWIP_SUPABASE_URL`, `ZWIP_SUPABASE_ANON_KEY` anlegen.
+4. Auf `main` pushen oder den Workflow unter **Actions** manuell starten.
 
 > Achtung: GitHub Pages funktioniert bei **privaten** Repos nur mit einem bezahlten GitHub-Konto. Dann lieber Option A oder B nehmen.
 

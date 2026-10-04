@@ -1,5 +1,7 @@
 # Veröffentlicht ZWIP kostenlos auf GitHub Pages.
-# Einmalig aktivieren: Repo → Settings → Pages → Source: "GitHub Actions".
+# Einmalig aktivieren:
+#   1. Repo → Settings → Pages → Source: "GitHub Actions"
+#   2. Repo → Settings → Secrets and variables → Actions → Variables: ZWIP_PAGES = true
 # Hinweis: Bei privaten Repos braucht GitHub Pages ein bezahltes Konto (Pro/Team).
 #          Kostenlose Alternative: Cloudflare Pages, Netlify oder Vercel (siehe DEPLOYMENT.md).
 name: Deploy to GitHub Pages
@@ -20,6 +22,7 @@ concurrency:
 
 jobs:
   deploy:
+    if: vars.ZWIP_PAGES == 'true'
     runs-on: ubuntu-latest
     environment:
       name: github-pages
