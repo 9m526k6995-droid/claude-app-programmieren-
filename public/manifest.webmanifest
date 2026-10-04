@@ -1,0 +1,14 @@
+{
+  "name": "ZWIP – 10 Blitz-Challenges",
+  "short_name": "ZWIP",
+  "description": "10 Blitz-Challenges in 30 Sekunden. Jeden Tag neu.",
+  "start_url": "./",
+  "scope": "./",
+  "display": "standalone",
+  "orientation": "portrait",
+  "background_color": "#16101f",
+  "theme_color": "#16101f",
+  "icons": [
+    { "src": "icon.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "any maskable" }
+  ]
+}

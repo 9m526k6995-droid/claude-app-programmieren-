@@ -1,0 +1,44 @@
+# Veröffentlicht ZWIP kostenlos auf GitHub Pages.
+# Einmalig aktivieren: Repo → Settings → Pages → Source: "GitHub Actions".
+# Hinweis: Bei privaten Repos braucht GitHub Pages ein bezahltes Konto (Pro/Team).
+#          Kostenlose Alternative: Cloudflare Pages, Netlify oder Vercel (siehe DEPLOYMENT.md).
+name: Deploy to GitHub Pages
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: pages
+  cancel-in-progress: true
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - run: npm install
+      - name: Build
+        run: npm run build
+        env:
+          ZWIP_PUBLIC_URL: ${{ vars.ZWIP_PUBLIC_URL }}
+          ZWIP_SUPABASE_URL: ${{ vars.ZWIP_SUPABASE_URL }}
+          ZWIP_SUPABASE_ANON_KEY: ${{ vars.ZWIP_SUPABASE_ANON_KEY }}
+      - uses: actions/configure-pages@v5
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: dist
+      - id: deployment
+        uses: actions/deploy-pages@v4

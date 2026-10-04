@@ -1,0 +1,24 @@
+{
+  "name": "zwip",
+  "private": true,
+  "version": "0.1.0",
+  "description": "ZWIP – 10 Blitz-Challenges in 30 Sekunden. Jeden Tag neu.",
+  "type": "module",
+  "scripts": {
+    "dev": "node build.mjs --serve",
+    "build": "node build.mjs",
+    "build:single": "node build.mjs --single",
+    "typecheck": "tsc -p .",
+    "test": "tsc -p . && node tests/run-unit.mjs && node tests/leaderboard-mock.mjs",
+    "test:e2e": "node build.mjs && node tests/e2e.mjs",
+    "preview": "node build.mjs && npx --yes serve dist"
+  },
+  "devDependencies": {
+    "esbuild": "^0.28.0",
+    "playwright": "^1.56.0",
+    "typescript": "^6.0.0"
+  },
+  "engines": {
+    "node": ">=20"
+  }
+}
