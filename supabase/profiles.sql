@@ -23,9 +23,11 @@ drop policy if exists "own profile: update" on public.profiles;
 create policy "own profile: update" on public.profiles
   for update using (id = auth.uid()) with check (id = auth.uid());
 
+-- Rechte ausdrücklich vergeben (funktioniert auch, wenn "Automatically expose new tables" aus ist).
+-- Angemeldete dürfen lesen/ändern (die Regeln oben begrenzen das aufs eigene Profil).
 -- Anlegen und Löschen passiert nur automatisch, nie direkt über die App.
-revoke insert, delete on public.profiles from anon, authenticated;
-revoke all on public.profiles from anon;
+revoke all on public.profiles from anon, authenticated;
+grant select, update on public.profiles to authenticated;
 
 -- Profil automatisch anlegen, sobald sich jemand registriert.
 create or replace function public.handle_new_user()
