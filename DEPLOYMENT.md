@@ -72,6 +72,9 @@ Ohne Supabase zeigt die App nur das Startmenü mit einem Hinweis, dass die Anmel
 Die **Project URL** (`https://xxxx.supabase.co`) steht unter **Project Settings → Data API** bzw. oben im Projekt-Dashboard unter **Connect**.
 
 ### 5. Werte eintragen
+
+**Aktuell schon erledigt:** Die öffentlichen Werte für die Live-App stehen in `.env.production` im Repo. Cloudflare baut damit automatisch, es müssen keine Variablen beim Hoster eingetragen werden. Variablen beim Hoster oder eine lokale `.env` haben Vorrang, falls man mal ein anderes Supabase-Projekt nutzen will.
+
 **Lokal:** `.env.example` zu `.env` kopieren und ausfüllen:
 ```
 ZWIP_SUPABASE_URL=https://xxxx.supabase.co

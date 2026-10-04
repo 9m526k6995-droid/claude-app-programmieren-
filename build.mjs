@@ -13,7 +13,8 @@ const serve = args.has("--serve");
 // .env lesen (ohne Extra-Paket)
 function loadEnv() {
   const env = { ...process.env };
-  for (const f of [".env", ".env.local"]) {
+  // Reihenfolge = Vorrang: Umgebungsvariablen > .env > .env.local > .env.production
+  for (const f of [".env", ".env.local", ".env.production"]) {
     if (!fs.existsSync(f)) continue;
     for (const line of fs.readFileSync(f, "utf8").split(/\r?\n/)) {
       const m = line.match(/^\s*([A-Z0-9_]+)\s*=\s*(.*)\s*$/);
