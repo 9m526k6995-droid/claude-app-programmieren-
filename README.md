@@ -6,7 +6,7 @@ ZWIP ist ein Mobile-first Web-Game für Jugendliche und junge Erwachsene. Kosten
 
 ## Was man macht
 
-Eine Runde besteht aus 10 Mini-Challenges, die jeweils nur 1–3 Sekunden dauern:
+Eine Runde besteht aus 10 Mini-Challenges, die jeweils nur ein paar Sekunden dauern:
 
 | | Challenge | Was zu tun ist |
 |---|---|---|
@@ -18,6 +18,12 @@ Eine Runde besteht aus 10 Mini-Challenges, die jeweils nur 1–3 Sekunden dauern
 | 🧮 | Stimmt das? | Rechnung prüfen: ✓ oder ✗ |
 | 🎨 | Farbe, nicht Wort! | Die Schriftfarbe tippen, nicht das Wort |
 | 👉 | Wisch den Pfeil | In Pfeilrichtung wischen – oder genau andersrum |
+| 🔍 | Wo ist es? | Das gesuchte Emoji im Gewimmel finden |
+| 🧠 | Merk dir's! | Aufleuchtende Felder in der gleichen Reihenfolge nachtippen |
+| 🥁 | Im Takt! | Drei Schläge hören, den vierten genau im Takt tippen |
+| 🧩 | Was kommt dann? | Ein Muster aus Symbolen fortsetzen |
+
+Die letzten vier sind ab Daily #5 dabei (im Training und Endlos-Modus sofort). Jede Runde zieht 10 verschiedene Challenges.
 
 Schnell und richtig gibt bis zu 100 Punkte pro Challenge, maximal 1000. Die Schwierigkeit steigt innerhalb der Runde.
 
@@ -88,7 +94,7 @@ src/
   main.ts         Screens, Spielablauf, Teilen, Bestenliste
   auth.ts         Anmeldung, Registrierung, Sitzung, Logout (Supabase Auth)
   startmenu.ts    Startmenü, Anmelde- und Registrierungsformular
-  games.ts        Die 8 Mini-Challenges
+  games.ts        Die 12 Mini-Challenges
   run.ts          Rundenaufbau, Punkte, Bewertung
   rng.ts          Seed-Zufall, Daily-Nummer
   state.ts        Spielstand, Streaks, Crew
@@ -104,7 +110,7 @@ tests/                Logik-, Bestenlisten- und Browser-Tests
 
 ### Neue Challenge hinzufügen
 
-In `src/games.ts` ein neues `MicroGame`-Objekt anlegen, in `GAMES` eintragen und die ID in `GAME_IDS` (`src/run.ts`) ergänzen. Fertig – die Challenge taucht automatisch in Daily, Training und Endlos auf.
+In `src/games.ts` ein neues `MicroGame`-Objekt anlegen, in `GAMES` eintragen und die ID in `GAME_IDS` (`src/run.ts`) ergänzen. Damit schon gespielte Dailies (und Duelle darauf) unverändert bleiben, `NEW_GAMES_FROM_DAY` bzw. `idsForDay` so anpassen, dass die neue Challenge erst ab der nächsten Daily dabei ist.
 
 ## Deployment
 

@@ -450,5 +450,264 @@ const swipe: MicroGame = {
   },
 };
 
-export const GAMES: MicroGame[] = [odd, stop, wait, more, pop, sum, ink, swipe];
+// 9) Suchbild: das gesuchte Emoji im Gewimmel finden
+const FAMILIES = [
+  ["🐸", "🐢", "🐍", "🦎", "🐊", "🐲", "🦖", "🐛"],
+  ["😀", "😃", "😄", "😁", "😆", "😅", "🙂", "😊"],
+  ["🍎", "🍅", "🍒", "🍓", "🍉", "🌶️", "🍑", "🥕"],
+  ["🐶", "🐱", "🐭", "🐹", "🐰", "🦊", "🐻", "🐼"],
+  ["⚽", "🏀", "🏈", "⚾", "🎾", "🏐", "🎱", "🥎"],
+  ["🌸", "🌺", "🌷", "🌹", "🌼", "🌻", "💐", "🏵️"],
+] as const;
+
+const find: MicroGame = {
+  id: "find",
+  title: "Wo ist es?",
+  hint: "Finde das Emoji von oben",
+  emoji: "🔍",
+  bg: "linear-gradient(160deg,#25d9e8,#3d7bff)",
+  mount({ el, rng, level, finish, expose }) {
+    const fam = rng.pick(FAMILIES);
+    const target = rng.pick(fam);
+    const others = fam.filter((e) => e !== target);
+    const cols = level < 0.3 ? 4 : level < 0.7 ? 5 : 6;
+    const count = cols * (level < 0.3 ? 4 : level < 0.7 ? 5 : 6);
+    const at = rng.int(0, count - 1);
+    const wrap = h("div", "find-wrap");
+    const head = h("div", "find-target");
+    head.append(h("span", "", "Finde"), h("b", "", target));
+    const grid = h("div", "find-grid");
+    grid.style.setProperty("--cols", String(cols));
+    let targetEl: HTMLElement | null = null;
+    for (let i = 0; i < count; i++) {
+      const isT = i === at;
+      const b = h("button", "find-cell", isT ? target : rng.pick(others));
+      b.setAttribute("aria-label", isT ? "Gesuchtes Emoji" : "Emoji");
+      b.style.animationDelay = `${i * 8}ms`;
+      b.style.setProperty("--tilt", `${rng.int(-14, 14)}deg`);
+      if (isT) targetEl = b;
+      onPress(b, () => {
+        if (isT) {
+          b.classList.add("hit");
+          finish({ ok: true });
+        } else {
+          b.classList.add("miss");
+          targetEl?.classList.add("reveal");
+          finish({ ok: false, reason: "Falsches Emoji!" });
+        }
+      });
+      grid.append(b);
+    }
+    wrap.append(head, grid);
+    el.append(wrap);
+    expose({ target: targetEl });
+    return { limit: 4200 + Math.round(level * 1200) };
+  },
+};
+
+// 10) Blitz-Memory: Reihenfolge merken und nachtippen
+const memory: MicroGame = {
+  id: "memory",
+  title: "Merk dir's!",
+  hint: "Schau zu – dann in gleicher Reihenfolge tippen",
+  emoji: "🧠",
+  bg: "linear-gradient(160deg,#a45cff,#ff3d8b)",
+  mount({ el, rng, level, finish, sfx, expose }) {
+    const len = level < 0.4 ? 3 : level < 0.75 ? 4 : 5;
+    const seq: number[] = [];
+    while (seq.length < len) {
+      const n = rng.int(0, 8);
+      if (n !== seq[seq.length - 1]) seq.push(n);
+    }
+    const wrap = h("div", "mem-wrap");
+    const label = h("div", "mem-label", "Schau genau hin…");
+    const grid = h("div", "mem-grid");
+    const cells: HTMLElement[] = [];
+    for (let i = 0; i < 9; i++) {
+      const c = h("button", "mem-cell");
+      c.setAttribute("aria-label", `Feld ${i + 1}`);
+      cells.push(c);
+      grid.append(c);
+    }
+    wrap.append(label, grid);
+    el.append(wrap);
+
+    const ON = 380,
+      GAP = 140,
+      START = 350;
+    const timers: number[] = [];
+    seq.forEach((n, i) => {
+      timers.push(
+        window.setTimeout(() => {
+          cells[n].classList.add("lit");
+          sfx.beat(false);
+        }, START + i * (ON + GAP)),
+        window.setTimeout(() => cells[n].classList.remove("lit"), START + i * (ON + GAP) + ON),
+      );
+    });
+    const showEnd = START + len * (ON + GAP);
+    let ready = false;
+    let inputStart = 0;
+    let pos = 0;
+    timers.push(
+      window.setTimeout(() => {
+        ready = true;
+        inputStart = performance.now();
+        label.textContent = "Jetzt du!";
+        grid.classList.add("ready");
+      }, showEnd),
+    );
+    cells.forEach((c, i) =>
+      onPress(c, () => {
+        if (!ready) return;
+        if (i === seq[pos]) {
+          c.classList.remove("tap");
+          void c.offsetWidth;
+          c.classList.add("tap");
+          sfx.pop(pos);
+          pos += 1;
+          if (pos === len) {
+            const t = performance.now() - inputStart;
+            finish({ ok: true, rating: Math.max(0, Math.min(1, 1 - (t - len * 280) / (len * 700))) });
+          }
+        } else {
+          c.classList.add("miss");
+          cells[seq[pos]].classList.add("reveal");
+          finish({ ok: false, reason: "Falsche Reihenfolge" });
+        }
+      }),
+    );
+    expose({ sequence: seq.map((n) => cells[n]), isReady: () => ready });
+    return { limit: showEnd + len * 900 + 1400, cleanup: () => timers.forEach(clearTimeout) };
+  },
+};
+
+// 11) Im Takt: drei Schläge hören, den vierten selbst tippen
+const beat: MicroGame = {
+  id: "beat",
+  title: "Im Takt!",
+  hint: "Tipp den 4. Schlag genau im Takt",
+  emoji: "🥁",
+  bg: "radial-gradient(120% 90% at 50% 0%,#2a3fa0,#121633)",
+  mount({ el, rng, level, finish, sfx, expose }) {
+    const interval = Math.round(lerp(640, 430, level) + rng.int(-30, 30));
+    const START = 450;
+    const wrap = h("div", "beat-wrap");
+    const ring = h("div", "beat-ring");
+    const core = h("div", "beat-core", "♪");
+    ring.append(core);
+    const dots = h("div", "beat-dots");
+    const dotEls: HTMLElement[] = [];
+    for (let i = 0; i < 4; i++) {
+      const d = h("span", i === 3 ? "beat-dot you" : "beat-dot", i === 3 ? "DU" : String(i + 1));
+      dotEls.push(d);
+      dots.append(d);
+    }
+    wrap.append(ring, dots);
+    el.append(wrap);
+    ring.style.setProperty("--beat", `${interval}ms`);
+
+    const t0 = performance.now();
+    const target = t0 + START + 3 * interval;
+    const timers: number[] = [];
+    for (let i = 0; i < 3; i++) {
+      timers.push(
+        window.setTimeout(() => {
+          ring.classList.remove("pulse");
+          void ring.offsetWidth;
+          ring.classList.add("pulse");
+          dotEls[i].classList.add("on");
+          sfx.beat(i === 0);
+        }, START + i * interval),
+      );
+    }
+    const window_ = interval * 0.42;
+    onPress(el, () => {
+      const err = performance.now() - target;
+      if (err < -window_ || err > window_) {
+        dotEls[3].classList.add("miss");
+        finish({ ok: false, reason: err < 0 ? "Zu früh! 🥁" : "Zu spät! 🥁" });
+        return;
+      }
+      ring.classList.remove("pulse");
+      void ring.offsetWidth;
+      ring.classList.add("pulse", "hit");
+      dotEls[3].classList.add("on");
+      core.textContent = `${err > 0 ? "+" : ""}${Math.round(err)} ms`;
+      finish({ ok: true, rating: Math.max(0, 1 - Math.abs(err) / window_) });
+    });
+    expose({ targetAt: target });
+    return {
+      limit: Math.round(START + 3 * interval + window_ + 60),
+      hideTimer: true,
+      cleanup: () => timers.forEach(clearTimeout),
+    };
+  },
+};
+
+// 12) Muster: Welche Form kommt als Nächstes?
+const SHAPES = ["🔴", "🟦", "⭐", "💜", "🔶", "🍀", "⚡", "🌙"] as const;
+const UNITS: Record<number, number[][]> = {
+  2: [[0, 1]],
+  3: [
+    [0, 1, 2],
+    [0, 0, 1],
+    [0, 1, 1],
+    [0, 1, 0],
+  ],
+};
+
+const pattern: MicroGame = {
+  id: "pattern",
+  title: "Was kommt dann?",
+  hint: "Setz das Muster fort",
+  emoji: "🧩",
+  bg: "linear-gradient(160deg,#c6ff3d,#22c36b)",
+  mount({ el, rng, level, finish, expose }) {
+    const p = level < 0.35 ? 2 : level < 0.7 ? rng.pick([2, 3]) : 3;
+    const unitIdx = rng.pick(UNITS[p]);
+    const symbols = rng.shuffle(SHAPES).slice(0, 3);
+    const unit = unitIdx.map((i) => symbols[i]);
+    const shown = 2 * p + rng.int(0, p - 1);
+    const seq = Array.from({ length: shown }, (_, i) => unit[i % p]);
+    const answer = unit[shown % p];
+    const used = Array.from(new Set(unit)).filter((x) => x !== answer);
+    const extra = SHAPES.filter((x) => !unit.includes(x));
+    const opts = rng.shuffle([answer, ...used.slice(0, 2), ...rng.shuffle(extra)].slice(0, 3));
+
+    const wrap = h("div", "pat-wrap");
+    const row = h("div", "pat-row");
+    // Höchstens 2 volle Durchläufe + 1 zeigen, damit die Reihe auf jedes Handy passt
+    seq.slice(-Math.min(seq.length, 2 * p + 1)).forEach((x, i) => {
+      const c = h("span", "pat-item", x);
+      c.style.animationDelay = `${i * 40}ms`;
+      row.append(c);
+    });
+    row.append(h("span", "pat-item q", "?"));
+    const choices = h("div", "pat-choices");
+    let target: HTMLElement | null = null;
+    opts.forEach((o) => {
+      const b = h("button", "pat-btn", o);
+      b.setAttribute("aria-label", "Antwort");
+      if (o === answer) target = b;
+      onPress(b, () => {
+        if (o === answer) {
+          b.classList.add("hit");
+          finish({ ok: true });
+        } else {
+          b.classList.add("miss");
+          target?.classList.add("reveal");
+          finish({ ok: false, reason: `Richtig wäre ${answer}` });
+        }
+      });
+      choices.append(b);
+    });
+    wrap.append(row, choices);
+    el.append(wrap);
+    expose({ target });
+    return { limit: 4200 };
+  },
+};
+
+export const GAMES: MicroGame[] = [odd, stop, wait, more, pop, sum, ink, swipe, find, memory, beat, pattern];
 export const GAME_BY_ID: Record<string, MicroGame> = Object.fromEntries(GAMES.map((g) => [g.id, g]));

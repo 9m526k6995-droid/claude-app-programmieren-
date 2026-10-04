@@ -13,7 +13,7 @@ import {
 } from "./state";
 import { createSfx } from "./sound";
 import { GAME_BY_ID, type Outcome } from "./games";
-import { buildRounds, endlessRound, roundPoints, tileOf, verdict, ROUNDS, type Mode, type RoundSpec } from "./run";
+import { buildRounds, endlessRound, roundPoints, tileOf, verdict, ROUNDS, idsForDay, GAME_IDS, type Mode, type RoundSpec } from "./run";
 import {
   encodeChallenge,
   decodeChallenge,
@@ -159,7 +159,7 @@ function acceptChallenge(p: ChallengePayload) {
       day: p.d,
       seed: daySeed(p.d!),
       rounds: mine.rounds,
-      specs: buildRounds(daySeed(p.d!)),
+      specs: buildRounds(daySeed(p.d!), ROUNDS, idsForDay(p.d!)),
       vs: p,
       replay: true,
     });
@@ -431,7 +431,10 @@ async function startRun(mode: Mode, opts: RunOpts = {}) {
     return results({ mode, seed, rounds, specs, endlessBest: isBest });
   }
 
-  const list = buildRounds(seed);
+  // Dailies (auch als Duell) mit den Challenges ihres Tages, Training mit allen
+  let ids: readonly string[] = day !== undefined ? idsForDay(day) : GAME_IDS;
+  if (E2E && params.get("only")) ids = params.get("only")!.split(",").filter((id) => GAME_BY_ID[id]);
+  const list = buildRounds(seed, ROUNDS, ids);
   specs.push(...list);
   playScreen(mode, ROUNDS);
   const holder = document.getElementById("holder")!;
@@ -781,7 +784,7 @@ app.addEventListener("click", async (e) => {
     case "challenge-today": {
       const r = S.daily[t];
       if (!r) return;
-      const d: ResultData = { mode: "daily", day: t, seed: daySeed(t), rounds: r.rounds, specs: buildRounds(daySeed(t)) };
+      const d: ResultData = { mode: "daily", day: t, seed: daySeed(t), rounds: r.rounds, specs: buildRounds(daySeed(t), ROUNDS, idsForDay(t)) };
       await doShare(resultShareText(d, act === "challenge-today"));
       return;
     }

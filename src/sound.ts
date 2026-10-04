@@ -7,6 +7,7 @@ export interface Sfx {
   bad(): void;
   go(): void;
   tick(): void;
+  beat(accent?: boolean): void;
   win(): void;
   setMuted(m: boolean): void;
   unlock(): void;
@@ -85,6 +86,10 @@ export function createSfx(initiallyMuted: boolean): Sfx {
     },
     tick() {
       tone(1200, 0.025, "square", 0.04);
+    },
+    beat(accent = false) {
+      tone(accent ? 220 : 180, 0.12, "sine", 0.32, 70);
+      tone(accent ? 1500 : 1100, 0.03, "square", 0.05);
     },
     win() {
       [523, 659, 784, 1047].forEach((f, i) => tone(f, 0.18, "triangle", 0.15, undefined, i * 0.09));

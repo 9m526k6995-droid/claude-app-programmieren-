@@ -5,7 +5,16 @@ import { makeRng, hashStr } from "./rng";
 export type Mode = "daily" | "free" | "endless" | "challenge";
 
 export const ROUNDS = 10;
-export const GAME_IDS = ["odd", "stop", "wait", "more", "pop", "sum", "ink", "swipe"] as const;
+/** Die ursprünglichen 8 Challenges (Daily #1–#4). */
+export const CLASSIC_IDS = ["odd", "stop", "wait", "more", "pop", "sum", "ink", "swipe"] as const;
+/** Alle Challenges. Neue einfach hinten anhängen und NEW_GAMES_FROM_DAY anpassen. */
+export const GAME_IDS = [...CLASSIC_IDS, "find", "memory", "beat", "pattern"] as const;
+/** Ab dieser Daily sind die neuen Challenges dabei – ältere Dailies (und Duelle darauf) bleiben exakt gleich. */
+export const NEW_GAMES_FROM_DAY = 5;
+
+export function idsForDay(day: number): readonly string[] {
+  return day < NEW_GAMES_FROM_DAY ? CLASSIC_IDS : GAME_IDS;
+}
 
 export interface RoundSpec {
   gameId: string;
@@ -13,7 +22,7 @@ export interface RoundSpec {
   level: number;
 }
 
-/** Reihenfolge: jede Challenge mindestens einmal, nie zweimal direkt hintereinander. */
+/** Reihenfolge: möglichst viele verschiedene Challenges, nie zweimal direkt hintereinander. */
 export function buildRounds(seed: number, count = ROUNDS, ids: readonly string[] = GAME_IDS): RoundSpec[] {
   const rng = makeRng(seed);
   const order: string[] = [];

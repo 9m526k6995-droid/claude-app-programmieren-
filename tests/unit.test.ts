@@ -1,7 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { makeRng, dayIndex, daySeed, dateOfDay } from "../src/rng";
-import { buildRounds, endlessRound, roundPoints, tileOf, GAME_IDS, ROUNDS } from "../src/run";
+import { buildRounds, endlessRound, roundPoints, tileOf, GAME_IDS, CLASSIC_IDS, ROUNDS, idsForDay, NEW_GAMES_FROM_DAY } from "../src/run";
 import { freshState, recordDaily, currentStreak, addCrewResult } from "../src/state";
 import { encodeChallenge, decodeChallenge, extractChallengeCode, gridText, shareText, buildLink } from "../src/share";
 
@@ -25,11 +25,11 @@ test("Daily ist für alle gleich und täglich anders", () => {
   assert.notDeepEqual(buildRounds(daySeed(4)), buildRounds(daySeed(5)));
 });
 
-test("Runden: 10 Stück, alle Challenges dabei, keine direkte Wiederholung", () => {
+test("Runden mit 8 Klassikern: alle dabei, keine direkte Wiederholung", () => {
   for (let s = 0; s < 300; s++) {
-    const r = buildRounds(s * 7919);
+    const r = buildRounds(s * 7919, ROUNDS, CLASSIC_IDS);
     assert.equal(r.length, ROUNDS);
-    for (const id of GAME_IDS) assert.ok(r.some((x) => x.gameId === id), `fehlt ${id}`);
+    for (const id of CLASSIC_IDS) assert.ok(r.some((x) => x.gameId === id), `fehlt ${id}`);
     for (let i = 1; i < r.length; i++) assert.notEqual(r[i].gameId, r[i - 1].gameId);
     assert.equal(r[0].level, 0);
     assert.equal(r[9].level, 1);
@@ -111,4 +111,23 @@ test("Crew: Ergebnisse von Freunden werden pro Tag gespeichert", () => {
   assert.equal(Object.keys(s.crew).length, 1);
   assert.equal(s.crew.f1.name, "Mia K.");
   assert.equal(s.crew.f1.days[4].score, 700);
+});
+
+test("Mit allen 12 Challenges: 10 verschiedene pro Runde, neue kommen vor", () => {
+  const seen = new Set<string>();
+  for (let s = 0; s < 300; s++) {
+    const r = buildRounds(s * 104729, ROUNDS, GAME_IDS);
+    assert.equal(new Set(r.map((x) => x.gameId)).size, ROUNDS);
+    r.forEach((x) => seen.add(x.gameId));
+  }
+  assert.equal(seen.size, GAME_IDS.length);
+});
+
+test("Neue Challenges erst ab Daily #5 – alte Dailies und Duelle bleiben identisch", () => {
+  assert.deepEqual(idsForDay(4), CLASSIC_IDS);
+  assert.deepEqual(idsForDay(NEW_GAMES_FROM_DAY), GAME_IDS);
+  // Daily #4 muss exakt so aussehen wie vor dem Update (damals Standard = 8 Klassiker)
+  const before = buildRounds(daySeed(4), ROUNDS, ["odd", "stop", "wait", "more", "pop", "sum", "ink", "swipe"]);
+  assert.deepEqual(buildRounds(daySeed(4), ROUNDS, idsForDay(4)), before);
+  assert.ok(buildRounds(daySeed(5), ROUNDS, idsForDay(5)).some((r) => !(CLASSIC_IDS as readonly string[]).includes(r.gameId)));
 });

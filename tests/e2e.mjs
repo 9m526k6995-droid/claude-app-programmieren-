@@ -181,7 +181,19 @@ async function solveRound(page, lastN, fail = false) {
       await page.mouse.down();
       await page.mouse.move(c.x + opp[0], c.y + opp[1], { steps: 4 });
       await page.mouse.up();
-    } else if (["odd", "more", "sum", "ink"].includes(r.id)) {
+    } else if (r.id === "memory") {
+      await page.waitForFunction(() => window.__zwip.round?.isReady?.(), null, { polling: "raf", timeout: 8000 });
+      const p = await page.evaluate(() => {
+        const first = window.__zwip.round.sequence[0];
+        const wrong = [...first.parentElement.children].find((e) => e !== first);
+        const b = wrong.getBoundingClientRect();
+        return { x: b.left + b.width / 2, y: b.top + b.height / 2 };
+      });
+      await page.mouse.click(p.x, p.y);
+    } else if (r.id === "beat") {
+      const c = await stageCenter(page);
+      await page.mouse.click(c.x, c.y); // viel zu früh
+    } else if (["odd", "more", "sum", "ink", "find", "pattern"].includes(r.id)) {
       // Ein falsches Feld derselben Sorte tippen
       const p = await page.evaluate(() => {
         const t = window.__zwip.round.target;
@@ -205,7 +217,9 @@ async function solveRound(page, lastN, fail = false) {
     case "odd":
     case "more":
     case "sum":
-    case "ink": {
+    case "ink":
+    case "find":
+    case "pattern": {
       const p = await center(page, (round) => round.target);
       await page.mouse.click(p.x, p.y);
       break;
@@ -219,6 +233,24 @@ async function solveRound(page, lastN, fail = false) {
         }, i);
         await page.mouse.click(p.x, p.y);
       }
+      break;
+    }
+    case "memory": {
+      await page.waitForFunction(() => window.__zwip.round?.isReady?.(), null, { polling: "raf", timeout: 8000 });
+      const n = await page.evaluate(() => window.__zwip.round.sequence.length);
+      for (let i = 0; i < n; i++) {
+        const p = await page.evaluate((i) => {
+          const b = window.__zwip.round.sequence[i].getBoundingClientRect();
+          return { x: b.left + b.width / 2, y: b.top + b.height / 2 };
+        }, i);
+        await page.mouse.click(p.x, p.y);
+      }
+      break;
+    }
+    case "beat": {
+      await page.waitForFunction(() => performance.now() >= window.__zwip.round.targetAt - 25, null, { polling: "raf", timeout: 6000 });
+      const c = await stageCenter(page);
+      await page.mouse.click(c.x, c.y);
       break;
     }
     case "stop": {
@@ -299,7 +331,7 @@ try {
   await A.page.waitForSelector(".intro");
   await A.page.screenshot({ path: `${SHOTS}/2-intro.png` });
   const seen = await playTen(A.page, "A");
-  check(new Set(seen).size === 8, `Alle 8 Challenges kamen vor: ${seen.join(", ")}`);
+  check(new Set(seen).size >= 8, `Mind. 8 verschiedene Challenges in der Daily: ${seen.join(", ")}`);
   const st = await A.page.evaluate(() => window.__zwip.state());
   const today = Object.keys(st.daily).map(Number)[0];
   const res = st.daily[today];
@@ -442,6 +474,34 @@ try {
   await B.page.waitForSelector(".endless-res", { timeout: 8000 });
   const er = await B.page.textContent(".endless-res");
   check(/\d+ Runden geschafft/.test(er), `Endlos endet nach Fehler: "${er}"`);
+
+  // 8b) Die vier neuen Challenges im Training, mit echten Taps gelöst
+  await B.page.goto(`${BASE}?e2e=1&only=find,memory,beat,pattern`);
+  await B.page.waitForSelector('[data-act="free"]', { timeout: 5000 });
+  await B.page.click('[data-act="free"]', { force: true });
+  const newSeen = [];
+  let nn = 0;
+  for (let i = 0; i < 10; i++) {
+    const r = await solveRound(B.page, nn);
+    nn = r.n;
+    newSeen.push(r.id);
+  }
+  await B.page.waitForSelector(".score-big", { timeout: 8000 });
+  const nState = await B.page.evaluate(() => [...document.querySelectorAll(".tile b")].map((b) => Number(b.textContent)));
+  check(["find", "memory", "beat", "pattern"].every((id) => newSeen.includes(id)), `Alle 4 neuen Challenges gespielt: ${newSeen.join(", ")}`);
+  check(nState.filter((p) => p > 0).length >= 8, `Neue Challenges per Tap lösbar (${nState.filter((p) => p > 0).length}/10 geschafft, Punkte ${nState.join("/")})`);
+  // Absichtlich falsch: jede neue Challenge muss Fehler erkennen
+  await B.page.click('.actions-2 [data-act="free"]', { force: true });
+  const failed = new Set();
+  nn = 0;
+  for (let i = 0; i < 10; i++) {
+    const r = await solveRound(B.page, nn, true);
+    nn = r.n;
+    failed.add(r.id);
+  }
+  await B.page.waitForSelector(".score-big", { timeout: 15000 });
+  const fState = await B.page.evaluate(() => [...document.querySelectorAll(".tile b")].map((b) => Number(b.textContent)));
+  check(fState.every((p) => p === 0), `Falsche Antworten geben 0 Punkte (${fState.join("/")})`);
 
   // 9) Training startet, Abbrechen funktioniert
   await B.page.click('.actions-2 [data-act="home"]', { force: true });
