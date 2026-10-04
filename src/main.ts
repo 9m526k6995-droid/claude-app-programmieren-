@@ -26,7 +26,7 @@ import {
 } from "./share";
 import { confetti, floatText, shake, countUp } from "./fx";
 import { submitScore, fetchBoard, fetchRank } from "./leaderboard";
-import { hasGlobalBoard, publicBase } from "./config";
+import { hasGlobalBoard, publicBase, CONFIG } from "./config";
 
 declare const __ZWIP_SINGLE__: boolean;
 
@@ -118,7 +118,7 @@ async function shareImage(blob: Blob) {
   }
   const url = URL.createObjectURL(blob);
   modal(
-    `<h3>Dein Story-Bild</h3><img class="story-preview" src="${url}" alt="ZWIP Ergebnis"><p class="muted">Lange drücken zum Speichern – oder:</p><a class="btn primary" href="${url}" download="zwip.png">Herunterladen</a><button class="btn ghost" data-close>Schließen</button>`,
+    `<h3>Dein Story-Bild</h3><img class="story-preview" src="${url}" alt="ZWIP Ergebnis"><p class="muted">Lange drücken zum Speichern – oder:</p>${typeof __ZWIP_SINGLE__ !== "undefined" && __ZWIP_SINGLE__ ? "" : `<a class="btn primary" href="${url}" download="zwip.png">Herunterladen</a>`}<button class="btn ghost" data-close>Schließen</button>`,
   );
 }
 
@@ -591,9 +591,13 @@ let lastResult: ResultData | null = null;
 
 function resultShareText(d: ResultData, withChallenge: boolean): string {
   const score = sumPoints(d.rounds);
-  const link = buildLink(publicBase(), d.mode === "endless" ? undefined : encodeChallenge(payloadFor(d)));
+  const code = d.mode === "endless" ? undefined : encodeChallenge(payloadFor(d));
+  // Ohne feste Web-Adresse (z. B. Vorschau-Datei) wird statt des Links der Code geteilt
+  const codeOnly = typeof __ZWIP_SINGLE__ !== "undefined" && __ZWIP_SINGLE__ && !CONFIG.publicUrl;
+  const link = codeOnly ? undefined : buildLink(publicBase(), code);
   if (withChallenge) {
-    return `${S.name} fordert dich bei ZWIP heraus ⚔️\n${score} Punkte in 10 Blitz-Challenges. Gleiche Runde, du bist dran:\n${link}`;
+    const target = codeOnly ? `Öffne ZWIP → Bestenliste → Code einfügen:\n${code}` : link;
+    return `${S.name} fordert dich bei ZWIP heraus ⚔️\n${score} Punkte in 10 Blitz-Challenges. Gleiche Runde, du bist dran:\n${target}`;
   }
   return shareText({
     mode: d.mode,
@@ -602,7 +606,7 @@ function resultShareText(d: ResultData, withChallenge: boolean): string {
     rounds: d.rounds,
     streak: d.mode === "daily" ? currentStreak(S, today()) : 0,
     endlessRounds: d.rounds.filter((p) => p > 0).length,
-    link,
+    link: link ?? (code ? `Duell-Code: ${code}` : undefined),
     vs: d.vs ? { name: d.vs.n, score: sumPoints(d.vs.r) } : undefined,
   });
 }

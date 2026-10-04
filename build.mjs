@@ -70,6 +70,10 @@ if (single) {
     .replace("<!--CSS-->", () => `<style>${css}</style>`)
     .replace("<!--JS-->", () => `<script>${js.replace(/<\/script/gi, "<\\/script")}</script>`);
   fs.writeFileSync(path.join(outdir, "index.html"), html);
+  // Variante ohne <html>/<head>/<body>-Gerüst, z. B. für Einbettungen, die das Gerüst selbst liefern
+  const fonts = html.match(/<link rel="preconnect"[\s\S]*?display=swap" \/>/)?.[0] ?? "";
+  const frag = `<title>ZWIP</title>\n${fonts}\n<style>${css}</style>\n<div id="app"></div>\n<script>${js.replace(/<\/script/gi, "<\\/script")}</script>\n`;
+  fs.writeFileSync(path.join(outdir, "embed.html"), frag);
   console.log(`✔ ${outdir}/index.html (${(html.length / 1024).toFixed(1)} KB)`);
 } else if (serve) {
   writeHtml();

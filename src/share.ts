@@ -95,7 +95,7 @@ export function shareText(opts: {
     lines.push(won ? `Hab ${opts.vs.name} geschlagen (${opts.vs.score}) 😎` : `${opts.vs.name} war besser (${opts.vs.score}) – Revanche!`);
   }
   if (opts.streak && opts.streak > 1) lines.push(`🔥 ${opts.streak} Tage am Stück`);
-  if (opts.link) lines.push(`Schlag mich: ${opts.link}`);
+  if (opts.link) lines.push(opts.link.startsWith("http") ? `Schlag mich: ${opts.link}` : opts.link);
   return lines.join("\n");
 }
 
