@@ -25,10 +25,25 @@ import {
   type ChallengePayload,
 } from "./share";
 import { confetti, floatText, shake, countUp } from "./fx";
-import { submitScore, fetchBoard, fetchRank } from "./leaderboard";
-import { hasGlobalBoard, publicBase, CONFIG } from "./config";
-import { restoreSession, currentUser, signOut, onAuthChange } from "./auth";
+import { publicBase, CONFIG } from "./config";
+import { restoreSession, currentUser, signOut, onAuthChange, authConfigured } from "./auth";
+import { TROPHY_TASKS, scoreRound, tierFor, levelFor, formatTrophies, formatDelta, LEAGUES, type TaskResult } from "./trophies";
+import {
+  startTrophyRound,
+  finishTrophyRound,
+  getTrophyBoard,
+  refreshProfile,
+  cachedProfile,
+  setCachedProfile,
+  onProfileChange,
+  SocialError,
+  type MyProfile,
+  type RoundStart,
+} from "./social";
+import { renderPath, renderTrophyResult, renderWorldBoard, askUsername, suggestUsername, leagueUp } from "./trophyUi";
+import { renderFriends } from "./friendsUi";
 import { renderStart } from "./startmenu";
+import { esc, sleep, toast, modal } from "./ui";
 
 declare const __ZWIP_SINGLE__: boolean;
 
@@ -52,32 +67,6 @@ let timers: number[] = [];
 function clearTimers() {
   timers.forEach((t) => clearInterval(t));
   timers = [];
-}
-
-const esc = (s: string) =>
-  s.replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[c]!);
-
-const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
-
-function toast(msg: string) {
-  document.querySelector(".toast")?.remove();
-  const t = document.createElement("div");
-  t.className = "toast";
-  t.textContent = msg;
-  document.body.append(t);
-  setTimeout(() => t.remove(), 2600);
-}
-
-function modal(inner: string, onMount?: (el: HTMLElement, close: () => void) => void) {
-  const wrap = document.createElement("div");
-  wrap.className = "modal-bg";
-  wrap.innerHTML = `<div class="modal" role="dialog" aria-modal="true">${inner}</div>`;
-  const close = () => wrap.remove();
-  wrap.addEventListener("click", (e) => {
-    if (e.target === wrap || (e.target as HTMLElement).closest("[data-close]")) close();
-  });
-  document.body.append(wrap);
-  onMount?.(wrap.querySelector(".modal")!, close);
 }
 
 // ---------- Teilen ----------
@@ -225,7 +214,9 @@ function home() {
   app.innerHTML = `
   <div class="screen home">
     <header class="topbar">
-      <div class="streak-pill ${streak ? "on" : ""}" aria-label="Streak ${streak} Tage">🔥 <b>${streak}</b></div>
+      <button class="trophy-pill" data-act="path" aria-label="Trophäenpfad öffnen">
+        <span class="flame" aria-hidden="true">🔥</span><b id="trophy-count">${myTrophyLabel()}</b>
+      </button>
       <div class="top-actions">
         <button class="icon-btn" data-act="sound" aria-label="Ton an/aus">${S.muted ? "🔇" : "🔊"}</button>
         <button class="icon-btn" data-act="settings" aria-label="Einstellungen">⚙️</button>
@@ -240,9 +231,13 @@ function home() {
     <div class="modes">
       <button class="mode" data-act="free"><span>🏋️</span><b>Training</b><small>${S.best.free ? `Best ${S.best.free}` : "unbegrenzt"}</small></button>
       <button class="mode" data-act="endless"><span>♾️</span><b>Endlos</b><small>${S.best.endless ? `Best ${S.best.endless}` : "1 Fehler = Ende"}</small></button>
-      <button class="mode" data-act="board"><span>🏆</span><b>Bestenliste</b><small>Crew${hasGlobalBoard ? " & Welt" : ""}</small></button>
+      <button class="mode" data-act="board"><span>🏆</span><b>Bestenliste</b><small>Crew & Welt</small></button>
+      <button class="mode" data-act="friends"><span>👥</span><b>Freunde</b><small>suchen & adden</small></button>
     </div>
-    <div class="week" aria-label="Diese Woche">${weekStrip(t)}</div>
+    <div class="week-wrap">
+      <div class="week-head"><span>Diese Woche</span><span class="streak-mini ${streak ? "on" : ""}">📆 ${streak} ${streak === 1 ? "Tag" : "Tage"} am Stück</span></div>
+      <div class="week" aria-label="Diese Woche">${weekStrip(t)}</div>
+    </div>
   </div>`;
 
   if (played && !pending) {
@@ -311,8 +306,18 @@ async function showIntro(holder: HTMLElement, spec: RoundSpec, label: string) {
 
 interface RoundResult extends Outcome {
   points: number;
+  /** Antwortzeit ab Ende der Vorbereitungsphase (ms) */
+  elapsed: number;
+  timeout: boolean;
 }
 
+/**
+ * Spielt eine Aufgabe. Ablauf:
+ *   1. Aufgabe erscheint vollständig.
+ *   2. Vorbereitungsphase (game.prep ms): Eingaben werden abgefangen, keine Zeitmessung.
+ *   3. Erst danach startet die Antwortzeit (t0) und der Countdown.
+ * Spiele mit eigener Vorlaufphase (Reaktionstest, Takt, Memory) haben prep = 0.
+ */
 function playRound(holder: HTMLElement, spec: RoundSpec): Promise<RoundResult> {
   const g = GAME_BY_ID[spec.gameId];
   const stage = document.createElement("div");
@@ -322,12 +327,20 @@ function playRound(holder: HTMLElement, spec: RoundSpec): Promise<RoundResult> {
   const timer = document.getElementById("timer")!;
   return new Promise((resolve) => {
     let done = false;
+    let unlocked = false;
+    let timedOut = false;
     let limit = 3000;
     let cleanup: (() => void) | undefined;
-    const t0 = performance.now();
+    let t0 = 0;
     let timeout = 0;
+    let prepTimer = 0;
+    let exposed: Record<string, unknown> | null = null;
+    const blockKeys = (e: KeyboardEvent) => {
+      e.preventDefault();
+      e.stopImmediatePropagation();
+    };
     const finish = (o: Outcome) => {
-      if (done) return;
+      if (done || !unlocked) return; // Eingaben während der Vorbereitung zählen nicht
       done = true;
       clearTimeout(timeout);
       const elapsed = performance.now() - t0;
@@ -335,7 +348,7 @@ function playRound(holder: HTMLElement, spec: RoundSpec): Promise<RoundResult> {
       hook.round = null;
       timer.style.transition = "none";
       timer.style.width = getComputedStyle(timer).width;
-      resolve({ ...o, points: roundPoints(o.ok, elapsed, limit, o.rating) });
+      resolve({ ...o, points: roundPoints(o.ok, elapsed, limit, o.rating), elapsed, timeout: timedOut });
     };
     const mounted = g.mount({
       el: stage,
@@ -346,21 +359,59 @@ function playRound(holder: HTMLElement, spec: RoundSpec): Promise<RoundResult> {
         finish(o);
       },
       sfx,
-      expose: E2E ? (info) => (hook.round = { ...info, gameId: g.id, n: ++roundCounter }) : () => {},
+      expose: E2E ? (info) => (exposed = info) : () => {},
     });
     limit = mounted.limit;
     cleanup = mounted.cleanup;
-    timer.parentElement!.classList.toggle("hidden", Boolean(mounted.hideTimer));
-    timer.style.transition = "none";
-    timer.style.width = "100%";
-    void timer.offsetWidth;
-    timer.style.transition = `width ${limit}ms linear`;
-    timer.style.width = "0%";
-    timeout = window.setTimeout(() => finish({ ok: false, reason: "Zu langsam ⏰" }), limit);
+    const timerBox = timer.parentElement!;
+    timerBox.classList.toggle("hidden", Boolean(mounted.hideTimer));
+
+    const unlock = () => {
+      if (done) return;
+      unlocked = true;
+      window.removeEventListener("keydown", blockKeys, true);
+      holder.querySelector(".prep-shield")?.remove();
+      stage.classList.remove("prepping");
+      timerBox.classList.remove("prep");
+      t0 = performance.now(); // ← ab hier zählt die Antwortzeit
+      timer.style.transition = "none";
+      timer.style.width = "100%";
+      void timer.offsetWidth;
+      timer.style.transition = `width ${limit}ms linear`;
+      timer.style.width = "0%";
+      timeout = window.setTimeout(() => {
+        timedOut = true;
+        finish({ ok: false, reason: "Zu langsam ⏰" });
+      }, limit);
+      if (E2E && exposed) hook.round = { ...exposed, gameId: g.id, n: ++roundCounter };
+    };
+
+    const prep = g.prep;
+    if (prep > 0) {
+      stage.classList.add("prepping");
+      const shield = document.createElement("div");
+      shield.className = "prep-shield";
+      shield.innerHTML = `<span class="prep-pill">👀 Schau genau…</span>`;
+      holder.append(shield);
+      window.addEventListener("keydown", blockKeys, true);
+      timerBox.classList.add("prep");
+      timer.style.transition = "none";
+      timer.style.width = "0%";
+      void timer.offsetWidth;
+      timer.style.transition = `width ${prep}ms linear`;
+      timer.style.width = "100%";
+      prepTimer = window.setTimeout(unlock, prep);
+    } else {
+      unlock();
+    }
+
     const abortCheck = window.setInterval(() => {
       if (done) return clearInterval(abortCheck);
       if (aborted) {
         clearInterval(abortCheck);
+        clearTimeout(prepTimer);
+        window.removeEventListener("keydown", blockKeys, true);
+        unlocked = true;
         finish({ ok: false });
       }
     }, 100);
@@ -453,14 +504,8 @@ async function startRun(mode: Mode, opts: RunOpts = {}) {
   }
 
   const result: DayResult = { score: total, rounds };
-  let rankP: Promise<{ rank: number; total: number } | null> | null = null;
   if (mode === "daily") {
-    const fresh = recordDaily(S, t, result);
-    if (fresh && !E2E && hasGlobalBoard) {
-      rankP = submitScore({ day: t, name: S.name, deviceId: S.deviceId, player: publicId(S), score: total, rounds }).then(
-        () => fetchRank(t, total),
-      );
-    }
+    recordDaily(S, t, result);
   } else if (mode === "free") {
     S.best.free = Math.max(S.best.free, total);
   }
@@ -469,7 +514,7 @@ async function startRun(mode: Mode, opts: RunOpts = {}) {
   }
   if (opts.vs) pending = null;
   save();
-  results({ mode, day, seed, rounds, specs, vs: opts.vs, rankP });
+  results({ mode, day, seed, rounds, specs, vs: opts.vs });
 }
 
 // ---------- Ergebnis ----------
@@ -483,7 +528,6 @@ interface ResultData {
   vs?: ChallengePayload;
   replay?: boolean;
   endlessBest?: boolean;
-  rankP?: Promise<{ rank: number; total: number } | null> | null;
 }
 
 function payloadFor(d: ResultData): ChallengePayload {
@@ -554,7 +598,6 @@ function results(d: ResultData) {
     <div class="stats">
       ${d.mode === "daily" ? `<div><b>🔥 ${streak}</b><span>Streak</span></div>` : ""}
       <div><b>${endless ? S.best.endless : d.mode === "daily" || d.day !== undefined ? S.best.daily : S.best.free}</b><span>Rekord</span></div>
-      <div id="rank-slot" class="${d.rankP ? "" : "hidden"}"><b>…</b><span>Platz heute</span></div>
     </div>
     ${
       showName
@@ -581,13 +624,6 @@ function results(d: ResultData) {
       confetti();
     }
   }, 1000);
-
-  d.rankP?.then((r) => {
-    const slot = document.getElementById("rank-slot");
-    if (!slot) return;
-    if (!r) return slot.classList.add("hidden");
-    slot.querySelector("b")!.textContent = `${r.rank}/${r.total}`;
-  });
 
   lastResult = d;
 }
@@ -625,12 +661,12 @@ async function board(tab: "crew" | "world" = "crew") {
   <div class="screen board">
     <header class="topbar">
       <button class="icon-btn" data-act="home" aria-label="Zurück">←</button>
-      <span class="mode-tag">Bestenliste · #${t}</span>
+      <span class="mode-tag">${tab === "world" ? "Weltrangliste" : `Bestenliste · #${t}`}</span>
       <span class="icon-btn ghost-slot"></span>
     </header>
     ${
-      hasGlobalBoard
-        ? `<div class="tabs"><button class="${tab === "crew" ? "on" : ""}" data-act="tab-crew">Crew</button><button class="${tab === "world" ? "on" : ""}" data-act="tab-world">Welt</button></div>`
+      authConfigured
+        ? `<div class="tabs"><button class="${tab === "crew" ? "on" : ""}" data-act="tab-crew">Crew (Daily)</button><button class="${tab === "world" ? "on" : ""}" data-act="tab-world">Welt 🏆</button></div>`
         : ""
     }
     <div id="list" class="list"></div>
@@ -667,21 +703,15 @@ async function board(tab: "crew" | "world" = "crew") {
     return;
   }
 
+  // Trophäen-Weltrangliste – kommt immer aus der Datenbank, sortiert nach Trophäen absteigend
   list.innerHTML = `<div class="empty">Lädt…</div>`;
-  const rows = await fetchBoard(t);
-  if (!rows) {
-    list.innerHTML = `<div class="empty">Bestenliste gerade nicht erreichbar 📡</div>`;
-    return;
+  try {
+    const b = await getTrophyBoard(100);
+    if (!list.isConnected) return;
+    renderWorldBoard(list, b, { onSetName: () => askName(() => board("world")) });
+  } catch (e) {
+    if (list.isConnected) list.innerHTML = `<div class="inline-error" role="alert">${esc(errMsg(e))}</div>`;
   }
-  const me = publicId(S);
-  list.innerHTML = rows.length
-    ? rows
-        .map(
-          (r, i) =>
-            `<div class="row-item ${r.player === me ? "me" : ""}"><span class="rk">${["🥇", "🥈", "🥉"][i] ?? i + 1}</span><span class="nm">${esc(r.name)}</span><b>${r.score}</b></div>`,
-        )
-        .join("")
-    : `<div class="empty">Sei heute die/der Erste!</div>`;
 }
 
 // ---------- Einstellungen ----------
@@ -747,6 +777,12 @@ app.addEventListener("click", async (e) => {
       return startRun("endless");
     case "board":
       return board("crew");
+    case "path":
+      return openPath();
+    case "friends":
+      return openFriends();
+    case "tquit":
+      return confirmTrophyQuit();
     case "tab-crew":
       return board("crew");
     case "tab-world":
@@ -832,6 +868,247 @@ if (typeof __ZWIP_SINGLE__ !== "undefined" && !__ZWIP_SINGLE__ && "serviceWorker
   });
 }
 
+// ---------- Trophäen ----------
+
+let myProfile: MyProfile | null = null;
+let trophyRun: { start: RoundStart; tasks: TaskResult[] } | null = null;
+
+const errMsg = (e: unknown) => (e instanceof Error ? e.message : "Da ist etwas schiefgelaufen.");
+
+function myTrophyLabel(): string {
+  const p = myProfile ?? cachedProfile(currentUser()?.id);
+  return p ? formatTrophies(p.trophies) : "–";
+}
+
+// Die Flamme aktualisiert sich automatisch, sobald sich der Trophäenstand ändert
+onProfileChange((p) => {
+  myProfile = p;
+  const el = document.getElementById("trophy-count");
+  if (el) el.textContent = p ? formatTrophies(p.trophies) : "–";
+});
+
+async function loadProfile(): Promise<MyProfile | null> {
+  try {
+    const p = await refreshProfile(currentUser()?.id);
+    if (p?.username && !S.nameSet) {
+      S.name = p.username;
+      S.nameSet = true;
+      save();
+    }
+    return p;
+  } catch {
+    return null;
+  }
+}
+
+function askName(then?: () => void) {
+  askUsername({
+    suggestion: myProfile?.username ?? suggestUsername(S.name),
+    onSaved: (p) => {
+      setCachedProfile(currentUser()?.id, p);
+      S.name = p.username;
+      S.nameSet = true;
+      save();
+      toast(`Hi ${p.username}! 👋`);
+      then?.();
+    },
+  });
+}
+
+async function openPath() {
+  clearTimers();
+  const uid = currentUser()?.id;
+  const handlers = {
+    onBack: () => home(),
+    onPlay: () => void startTrophyRun(),
+    onBoard: () => void board("world"),
+    onSetName: () => askName(() => void openPath()),
+  };
+  renderPath(app, myProfile ?? cachedProfile(uid), {}, handlers);
+  let error: string | undefined;
+  let p: MyProfile | null = null;
+  try {
+    p = await refreshProfile(uid);
+  } catch (e) {
+    error = errMsg(e);
+  }
+  if (app.querySelector(".path-screen")) renderPath(app, p ?? myProfile, { error }, handlers);
+}
+
+function openFriends() {
+  clearTimers();
+  renderFriends(app, {
+    onBack: () => home(),
+    hasName: () => Boolean(myProfile?.username),
+    askName: (then) => askName(then),
+  });
+  if (!myProfile) void loadProfile().then(() => app.querySelector(".friends") && !myProfile?.username && openFriends());
+}
+
+function confirmTrophyQuit() {
+  if (!trophyRun) return;
+  modal(
+    `<h3>Runde abbrechen?</h3>
+     <p class="modal-text">Die restlichen Aufgaben zählen dann als falsch (je −8 Trophäen).</p>
+     <button class="btn primary" data-close type="button">Weiterspielen</button>
+     <button class="btn ghost danger" id="tq-yes" type="button">Abbrechen</button>`,
+    (el, close) => {
+      el.querySelector("#tq-yes")!.addEventListener("click", () => {
+        close();
+        aborted = true;
+      });
+    },
+  );
+}
+
+function trophyScreen() {
+  app.innerHTML = `
+  <div class="screen play trophy-play">
+    <div class="hud">
+      <button class="icon-btn quit" data-act="tquit" aria-label="Runde abbrechen">✕</button>
+      <div class="t-hud">
+        <span class="t-task">Aufgabe <b id="t-task">1</b> / ${TROPHY_TASKS}</span>
+        <span class="t-streak" id="t-streak">🔥 Serie 0</span>
+      </div>
+      <div class="t-round" id="t-round">Runde: ±0</div>
+    </div>
+    <div class="timer"><div class="timer-fill" id="timer"></div></div>
+    <div class="stage-holder" id="holder"></div>
+  </div>`;
+}
+
+async function startTrophyRun() {
+  if (!myProfile) await loadProfile();
+  if (!myProfile?.username) {
+    askName(() => void startTrophyRun());
+    return;
+  }
+  clearTimers();
+  sfx.unlock();
+  aborted = false;
+
+  let start: RoundStart;
+  try {
+    start = await startTrophyRound();
+  } catch (e) {
+    toast(errMsg(e));
+    if (e instanceof SocialError && e.code === "username_required") askName(() => void startTrophyRun());
+    return;
+  }
+  const startedAt = performance.now();
+
+  // 15 Aufgaben aus ALLEN registrierten Minispielen: jedes kommt vor, bevor sich eines wiederholt,
+  // nie zweimal dasselbe direkt hintereinander. Schwierigkeit nach Trophäenstand.
+  const specs = buildRounds(start.seed, TROPHY_TASKS, GAME_IDS).map((sp, i) => ({ ...sp, level: levelFor(start.trophies, i) }));
+  const tasks: TaskResult[] = [];
+  trophyRun = { start, tasks };
+  trophyScreen();
+  const holder = document.getElementById("holder")!;
+  const $ = (id: string) => document.getElementById(id)!;
+
+  for (let i = 0; i < specs.length && !aborted; i++) {
+    const spec = specs[i];
+    $("t-task").textContent = String(i + 1);
+    await showIntro(holder, spec, `Aufgabe ${i + 1} / ${TROPHY_TASKS}`);
+    if (aborted) break;
+    const r = await playRound(holder, spec);
+    if (aborted) break;
+    const g = GAME_BY_ID[spec.gameId];
+    const ok = r.ok && !r.timeout;
+    const ms = Math.round(r.ms ?? r.elapsed);
+    tasks.push({ game: g.id, ok, timeout: r.timeout, tier: ok ? tierFor(ms, g.speed) : 0, ms });
+    const sc = scoreRound(tasks);
+    const step = sc.steps[sc.steps.length - 1];
+    $("t-streak").textContent = `🔥 ${step.streak ? `${step.streak}er-Serie` : "Serie 0"}`;
+    $("t-streak").classList.toggle("hot", step.streak >= 3);
+    const roundEl = $("t-round");
+    roundEl.textContent = `Runde: ${formatDelta(sc.raw)}`;
+    roundEl.className = `t-round ${sc.raw > 0 ? "pos" : sc.raw < 0 ? "neg" : ""}`;
+    await trophyFeedback(holder, r.ok && !r.timeout, step, r.reason);
+  }
+
+  // Abgebrochen: Rest zählt als falsch
+  while (tasks.length < TROPHY_TASKS) {
+    tasks.push({ game: specs[tasks.length].gameId, ok: false, timeout: true, tier: 0, ms: 0 });
+  }
+  aborted = false;
+  // Der Server wertet nur realistisch lange Runden (mind. 20 s). Bei frühem Abbruch kurz warten.
+  const wait = 20500 - (performance.now() - startedAt);
+  if (wait > 0) {
+    renderTrophyResult(app, { server: null, local: scoreRound(tasks), startTrophies: start.trophies, saving: true }, trophyResultHandlers());
+    await sleep(wait);
+  }
+  await submitTrophyRun();
+}
+
+async function trophyFeedback(holder: HTMLElement, ok: boolean, step: { delta: number; label: string; streakBonus: number; streak: number }, reason?: string) {
+  const stage = holder.firstElementChild as HTMLElement;
+  stage.classList.add(ok ? "done-ok" : "done-fail");
+  if (ok) {
+    sfx.good(step.label ? 95 : 70);
+    floatText(holder, `+${step.delta - step.streakBonus}${step.label ? ` ${step.label}` : ""}`, step.label ? "perfect t-gain" : "t-gain");
+    if (step.streakBonus) {
+      await sleep(260);
+      floatText(holder, `🔥 ${step.streak}er-Serie! +${step.streakBonus}`, "t-streakbonus");
+    }
+  } else {
+    sfx.bad();
+    shake(holder);
+    floatText(holder, `${formatDelta(step.delta)}${reason ? ` · ${reason}` : ""}`, "fail");
+  }
+  await sleep(ok ? (step.streakBonus ? 760 : 520) : 900);
+}
+
+function trophyResultHandlers() {
+  return {
+    again: () => void startTrophyRun(),
+    path: () => void openPath(),
+    board: () => void board("world"),
+    home: () => home(),
+    retry: () => void submitTrophyRun(),
+  };
+}
+
+async function submitTrophyRun() {
+  if (!trophyRun) return;
+  const { start, tasks } = trophyRun;
+  const local = scoreRound(tasks);
+  const h = trophyResultHandlers();
+  renderTrophyResult(app, { server: null, local, startTrophies: start.trophies, saving: true }, h);
+  try {
+    const res = await finishTrophyRound(start.round_id, tasks);
+    trophyRun = null;
+    renderTrophyResult(app, { server: res, local, startTrophies: start.trophies }, h);
+    const uid = currentUser()?.id;
+    if (myProfile) {
+      setCachedProfile(uid, {
+        ...myProfile,
+        trophies: res.new_trophies,
+        league: res.new_league,
+        world_rank: res.world_rank ?? myProfile.world_rank,
+        best_streak: Math.max(myProfile.best_streak ?? 0, res.best_streak),
+        trophy_rounds: (myProfile.trophy_rounds ?? 0) + 1,
+      });
+    }
+    void loadProfile();
+    const rank = (id: string) => LEAGUES.findIndex((l) => l.id === id);
+    if (rank(res.new_league) > rank(res.old_league)) {
+      await sleep(500);
+      sfx.win();
+      await leagueUp(res.new_league, res.new_trophies);
+    } else if (res.delta > 0) {
+      sfx.win();
+      if (res.delta >= 150) confetti();
+    }
+  } catch (e) {
+    if (e instanceof SocialError && e.code === "round_not_active") {
+      trophyRun = null;
+      void loadProfile();
+    }
+    renderTrophyResult(app, { server: null, local, startTrophies: start.trophies, error: errMsg(e) }, h);
+  }
+}
+
 // ---------- Start: erst Anmeldung, dann Spiel ----------
 
 function showStart() {
@@ -842,6 +1119,7 @@ function showStart() {
     banner: pending ? `<b>${esc(pending.n)}</b> fordert dich heraus (${sumPoints(pending.r)} Punkte)` : undefined,
     onSignedIn: (fresh) => {
       home();
+      void loadProfile();
       toast(fresh ? "Account erstellt – viel Spaß! 🎉" : "Angemeldet ✌️");
     },
   });
@@ -849,14 +1127,19 @@ function showStart() {
 
 // Abgemeldet (Logout oder abgelaufene Sitzung) → zurück ins Startmenü
 onAuthChange((s) => {
-  if (!s) showStart();
+  if (!s) {
+    setCachedProfile(undefined, null);
+    showStart();
+  }
 });
 
 async function boot() {
   app.innerHTML = `<div class="screen boot" aria-busy="true"><h1 class="logo" aria-label="ZWIP"><span>Z</span><span>W</span><span>I</span><span>P</span></h1></div>`;
   const s = await restoreSession();
-  if (s) home();
-  else showStart();
+  if (s) {
+    home();
+    void loadProfile();
+  } else showStart();
 }
 
 void boot();

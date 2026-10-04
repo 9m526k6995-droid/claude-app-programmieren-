@@ -300,3 +300,28 @@ document.addEventListener("visibilitychange", () => {
     void refresh().catch(() => {});
   }
 });
+
+/**
+ * Aufruf einer Datenbank-Funktion (Supabase RPC) im Namen des angemeldeten Benutzers.
+ * Erneuert das Zugangstoken bei Bedarf automatisch.
+ */
+export async function authedRpc(fn: string, args: Record<string, unknown> = {}): Promise<Response> {
+  if (!authConfigured) fail("not_configured");
+  if (session && session.expiresAt - 30 < Date.now() / 1000) await refresh().catch(() => {});
+  const send = () =>
+    fetch(`${CONFIG.supabaseUrl}/rest/v1/rpc/${fn}`, {
+      method: "POST",
+      headers: {
+        apikey: CONFIG.supabaseAnonKey,
+        Authorization: `Bearer ${session?.accessToken ?? CONFIG.supabaseAnonKey}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify(args),
+    });
+  let res = await send();
+  if (res.status === 401 && session) {
+    await refresh().catch(() => {});
+    if (session) res = await send();
+  }
+  return res;
+}

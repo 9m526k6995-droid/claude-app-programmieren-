@@ -8,6 +8,8 @@ export interface Outcome {
   ok: boolean;
   /** 0..1 – ersetzt die Zeitwertung, wenn die Challenge selbst Präzision misst */
   rating?: number;
+  /** Vom Spiel selbst gemessene Zeit/Abweichung in ms (z. B. Reaktionszeit ab Grün). Sonst misst der Ablauf. */
+  ms?: number;
   reason?: string;
 }
 
@@ -34,6 +36,14 @@ export interface MicroGame {
   hint: string;
   emoji: string;
   bg: string;
+  /**
+   * Orientierungszeit in ms: Die Aufgabe ist sichtbar, aber Eingaben zählen noch nicht und die
+   * Zeitmessung startet erst danach. 0 = das Spiel hat schon eine eigene Vorlaufphase
+   * (z. B. Reaktionstest, Takt, Memory), die nicht verfälscht werden darf.
+   */
+  prep: number;
+  /** Grenzen für den Trophäen-Tempobonus (ms ab Ende der Vorbereitung bzw. vom Spiel gemeldete ms). */
+  speed: { veryFast: number; fast: number };
   mount(ctx: Ctx): Mounted;
 }
 
@@ -80,6 +90,8 @@ const odd: MicroGame = {
   hint: "Ein Feld ist anders. Tippen!",
   emoji: "👁️",
   bg: "linear-gradient(160deg,#6a2cff,#b83dff)",
+  prep: 1200,
+  speed: { veryFast: 900, fast: 1700 },
   mount({ el, rng, level, finish, expose }) {
     const n = level < 0.3 ? 3 : level < 0.7 ? 4 : 5;
     const hue = rng.int(0, 359);
@@ -122,6 +134,8 @@ const stop: MicroGame = {
   hint: "Tippen, wenn der Strich im Feld ist",
   emoji: "🎯",
   bg: "linear-gradient(160deg,#ff3d6e,#ff8a3d)",
+  prep: 1000,
+  speed: { veryFast: 250, fast: 550 },
   mount({ el, rng, level, finish, expose }) {
     const width = lerp(30, 13, level);
     const zoneStart = rng.int(6, Math.floor(94 - width));
@@ -153,7 +167,8 @@ const stop: MicroGame = {
         const center = zoneStart + width / 2;
         const rating = Math.max(0, 1 - Math.abs(pos - center) / (width / 2));
         zone.classList.add("hit");
-        finish({ ok: true, rating: 0.35 + rating * 0.65 });
+        // ms = Abstand zur Mitte (0 = perfekt, 1000 = Rand) – für den Tempobonus im Trophäen-Modus
+        finish({ ok: true, rating: 0.35 + rating * 0.65, ms: Math.round((1 - rating) * 1000) });
       } else {
         needle.classList.add("miss");
         finish({ ok: false, reason: "Knapp daneben!" });
@@ -171,6 +186,8 @@ const wait: MicroGame = {
   hint: "Zu früh tippen = raus",
   emoji: "🚦",
   bg: "#1c1530",
+  prep: 0,
+  speed: { veryFast: 300, fast: 420 },
   mount({ el, rng, finish, sfx, expose }) {
     const delay = rng.int(900, 2300);
     const box = h("div", "wait-box red");
@@ -194,7 +211,7 @@ const wait: MicroGame = {
       }
       const rt = performance.now() - goAt;
       label.textContent = `${Math.round(rt)} ms`;
-      finish({ ok: true, rating: Math.max(0, Math.min(1, 1 - (rt - 200) / 500)) });
+      finish({ ok: true, rating: Math.max(0, Math.min(1, 1 - (rt - 200) / 500)), ms: Math.round(rt) });
     });
     expose({ isGo: () => goAt !== null });
     return { limit: delay + 1400, hideTimer: true, cleanup: () => clearTimeout(timer) };
@@ -208,6 +225,8 @@ const more: MicroGame = {
   hint: "Tipp die Seite mit mehr Punkten",
   emoji: "⚖️",
   bg: "linear-gradient(160deg,#0fb39a,#25d9e8)",
+  prep: 1300,
+  speed: { veryFast: 800, fast: 1500 },
   mount({ el, rng, level, finish, expose }) {
     const base = rng.int(5, 10);
     const diff = Math.max(1, Math.round(lerp(4, 1, level) + rng.next() * 0.6));
@@ -254,6 +273,8 @@ const pop: MicroGame = {
   hint: "Tipp jede Blase weg",
   emoji: "🫧",
   bg: "radial-gradient(120% 90% at 50% 0%,#4a2a7a,#1c1530)",
+  prep: 900,
+  speed: { veryFast: 1400, fast: 2300 },
   mount({ el, rng, level, finish, sfx, expose }) {
     const k = 3 + Math.round(level * 3);
     let left = k;
@@ -287,6 +308,8 @@ const sum: MicroGame = {
   hint: "✓ oder ✗ – schnell!",
   emoji: "🧮",
   bg: "linear-gradient(160deg,#2f6bff,#6a2cff)",
+  prep: 1500,
+  speed: { veryFast: 1200, fast: 2100 },
   mount({ el, rng, level, finish, expose }) {
     const op = level < 0.35 ? "+" : rng.pick(["+", "−", "×"] as const);
     let a: number, b: number, real: number;
@@ -351,6 +374,8 @@ const ink: MicroGame = {
   hint: "Welche FARBE hat das Wort?",
   emoji: "🎨",
   bg: "linear-gradient(160deg,#ffd23d,#ff8a3d)",
+  prep: 1300,
+  speed: { veryFast: 900, fast: 1600 },
   mount({ el, rng, level, finish, expose }) {
     const pool = rng.shuffle(INKS).slice(0, 4);
     const inkColor = pool[0];
@@ -396,6 +421,8 @@ const swipe: MicroGame = {
   hint: "In Pfeilrichtung wischen",
   emoji: "👉",
   bg: "linear-gradient(160deg,#22c36b,#0fb39a)",
+  prep: 900,
+  speed: { veryFast: 650, fast: 1200 },
   mount({ el, rng, level, finish, expose }) {
     const dir = rng.pick(["up", "down", "left", "right"] as const);
     const invert = level > 0.3 && rng.bool(0.5);
@@ -466,6 +493,8 @@ const find: MicroGame = {
   hint: "Finde das Emoji von oben",
   emoji: "🔍",
   bg: "linear-gradient(160deg,#25d9e8,#3d7bff)",
+  prep: 1800,
+  speed: { veryFast: 1300, fast: 2400 },
   mount({ el, rng, level, finish, expose }) {
     const fam = rng.pick(FAMILIES);
     const target = rng.pick(fam);
@@ -512,6 +541,8 @@ const memory: MicroGame = {
   hint: "Schau zu – dann in gleicher Reihenfolge tippen",
   emoji: "🧠",
   bg: "linear-gradient(160deg,#a45cff,#ff3d8b)",
+  prep: 0,
+  speed: { veryFast: 350, fast: 600 },
   mount({ el, rng, level, finish, sfx, expose }) {
     const len = level < 0.4 ? 3 : level < 0.75 ? 4 : 5;
     const seq: number[] = [];
@@ -568,7 +599,7 @@ const memory: MicroGame = {
           pos += 1;
           if (pos === len) {
             const t = performance.now() - inputStart;
-            finish({ ok: true, rating: Math.max(0, Math.min(1, 1 - (t - len * 280) / (len * 700))) });
+            finish({ ok: true, rating: Math.max(0, Math.min(1, 1 - (t - len * 280) / (len * 700))), ms: Math.round(t / len) });
           }
         } else {
           c.classList.add("miss");
@@ -589,6 +620,8 @@ const beat: MicroGame = {
   hint: "Tipp den 4. Schlag genau im Takt",
   emoji: "🥁",
   bg: "radial-gradient(120% 90% at 50% 0%,#2a3fa0,#121633)",
+  prep: 0,
+  speed: { veryFast: 45, fast: 100 },
   mount({ el, rng, level, finish, sfx, expose }) {
     const interval = Math.round(lerp(640, 430, level) + rng.int(-30, 30));
     const START = 450;
@@ -634,7 +667,7 @@ const beat: MicroGame = {
       ring.classList.add("pulse", "hit");
       dotEls[3].classList.add("on");
       core.textContent = `${err > 0 ? "+" : ""}${Math.round(err)} ms`;
-      finish({ ok: true, rating: Math.max(0, 1 - Math.abs(err) / window_) });
+      finish({ ok: true, rating: Math.max(0, 1 - Math.abs(err) / window_), ms: Math.round(Math.abs(err)) });
     });
     expose({ targetAt: target });
     return {
@@ -663,6 +696,8 @@ const pattern: MicroGame = {
   hint: "Setz das Muster fort",
   emoji: "🧩",
   bg: "linear-gradient(160deg,#c6ff3d,#22c36b)",
+  prep: 1600,
+  speed: { veryFast: 1200, fast: 2100 },
   mount({ el, rng, level, finish, expose }) {
     const p = level < 0.35 ? 2 : level < 0.7 ? rng.pick([2, 3]) : 3;
     const unitIdx = rng.pick(UNITS[p]);

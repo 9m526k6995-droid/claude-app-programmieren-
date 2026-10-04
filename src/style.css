@@ -1702,3 +1702,776 @@ input:focus {
 .pat-btn.reveal {
   outline: 5px dashed var(--ink);
 }
+
+/* ---------- Vorbereitungsphase ---------- */
+.prep-shield {
+  position: absolute;
+  inset: 0;
+  z-index: 6;
+  display: grid;
+  align-items: end;
+  justify-items: center;
+  padding-bottom: 18px;
+  touch-action: none;
+}
+.prep-pill {
+  padding: 8px 16px;
+  border-radius: 999px;
+  background: rgba(22, 16, 31, 0.72);
+  color: var(--paper);
+  font-weight: 800;
+  font-size: 15px;
+  animation: pulse 0.9s ease-in-out infinite;
+}
+.timer.prep .timer-fill {
+  background: rgba(255, 248, 239, 0.45);
+}
+
+/* =================== Trophäen =================== */
+
+/* Flamme oben links: Trophäenstand */
+.trophy-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-height: 44px;
+  padding: 6px 14px 6px 10px;
+  border-radius: 999px;
+  background: linear-gradient(135deg, #ff8a3d, #ff3d6e);
+  box-shadow: var(--shadow);
+  font-size: 18px;
+  font-weight: 900;
+  font-variant-numeric: tabular-nums;
+}
+.trophy-pill:active {
+  transform: translateY(3px);
+  box-shadow: 0 2px 0 rgba(0, 0, 0, 0.35);
+}
+.trophy-pill .flame {
+  font-size: 22px;
+  animation: flicker 1.6s ease-in-out infinite;
+}
+@keyframes flicker {
+  50% {
+    transform: scale(1.12) rotate(-4deg);
+  }
+}
+
+.modes {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+.mode {
+  grid-template-columns: auto 1fr;
+  justify-items: start;
+  align-items: center;
+  column-gap: 10px;
+  padding: 12px 14px;
+  text-align: left;
+}
+.mode span {
+  grid-row: span 2;
+}
+
+.week-wrap {
+  margin-top: auto;
+  display: grid;
+  gap: 8px;
+}
+.week-wrap .week {
+  margin-top: 0;
+  padding-top: 0;
+}
+.week-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  font-size: 13px;
+  color: var(--muted);
+  font-weight: 700;
+}
+.streak-mini {
+  padding: 4px 10px;
+  border-radius: 999px;
+  background: var(--ink-2);
+}
+.streak-mini.on {
+  color: var(--paper);
+  background: linear-gradient(135deg, rgba(255, 210, 61, 0.25), rgba(255, 138, 61, 0.25));
+}
+
+/* Liga-Abzeichen */
+.league-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 4px 10px;
+  border-radius: 999px;
+  font-size: 13px;
+  font-weight: 800;
+  color: var(--ink);
+  background: var(--lc);
+  white-space: nowrap;
+}
+
+.inline-error {
+  padding: 12px 14px;
+  border-radius: 14px;
+  background: rgba(255, 61, 90, 0.14);
+  box-shadow: inset 0 0 0 2px rgba(255, 61, 90, 0.5);
+  color: #ffd0d8;
+  font-weight: 700;
+  font-size: 14px;
+  line-height: 1.4;
+}
+.name-banner {
+  display: grid;
+  gap: 2px;
+  width: 100%;
+  padding: 12px 16px;
+  border-radius: 18px;
+  text-align: left;
+  background: linear-gradient(135deg, rgba(164, 92, 255, 0.3), rgba(255, 61, 139, 0.3));
+  box-shadow: inset 0 0 0 2px var(--violet);
+}
+.name-banner span {
+  font-size: 13px;
+  color: var(--muted);
+}
+.modal-text {
+  margin: 0;
+  line-height: 1.45;
+}
+.btn.danger {
+  color: #ff8fa3;
+  box-shadow: inset 0 0 0 2px rgba(255, 61, 90, 0.5);
+}
+.btn.armed {
+  background: var(--red);
+  color: #fff;
+}
+.actions-row {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+}
+
+/* ---------- Trophäenpfad ---------- */
+.path-screen {
+  height: 100dvh;
+  min-height: 0;
+  overflow: hidden;
+  gap: 12px;
+}
+.path-summary {
+  display: grid;
+  gap: 6px;
+  padding: 14px 16px;
+  border-radius: 22px;
+  background: var(--ink-2);
+  box-shadow: inset 0 0 0 2px var(--ink-3);
+}
+.ps-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+.ps-count {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 34px;
+  font-weight: 900;
+  font-variant-numeric: tabular-nums;
+  line-height: 1;
+}
+.ps-count .flame {
+  font-size: 30px;
+}
+.ps-next {
+  font-size: 14px;
+  line-height: 1.4;
+}
+.ps-league {
+  font-size: 13px;
+}
+.path-scroll {
+  position: relative;
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  border-radius: 24px;
+  background: rgba(0, 0, 0, 0.18);
+  box-shadow: inset 0 0 0 2px var(--ink-3);
+}
+.path {
+  position: relative;
+  width: 100%;
+}
+.band {
+  position: absolute;
+  left: 0;
+  right: 0;
+  border-top: 2px dashed color-mix(in srgb, var(--lc) 45%, transparent);
+  background: linear-gradient(0deg, color-mix(in srgb, var(--lc) 14%, transparent), transparent 70%);
+}
+.band.locked {
+  filter: grayscale(0.85);
+  opacity: 0.55;
+}
+.band.current {
+  background: linear-gradient(0deg, color-mix(in srgb, var(--lc) 26%, transparent), transparent 80%);
+}
+.band-label {
+  position: absolute;
+  left: 10px;
+  bottom: 8px;
+  display: grid;
+  font-size: 12px;
+  font-weight: 900;
+  letter-spacing: 0.08em;
+  color: var(--lc);
+}
+.band-label small {
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0;
+  color: var(--muted);
+}
+.path-svg {
+  position: absolute;
+  inset: 0;
+  overflow: visible;
+}
+.path-line-bg {
+  fill: none;
+  stroke: rgba(255, 248, 239, 0.18);
+  stroke-width: 10;
+  stroke-linecap: round;
+  stroke-dasharray: 2 14;
+}
+.path-line-done {
+  fill: none;
+  stroke: var(--lime);
+  stroke-width: 10;
+  stroke-linecap: round;
+  filter: drop-shadow(0 0 6px rgba(198, 255, 61, 0.6));
+}
+.pnode {
+  position: absolute;
+  transform: translate(-50%, -50%);
+  display: grid;
+  place-items: center;
+}
+.pn-dot {
+  width: 40px;
+  height: 40px;
+  border-radius: 50%;
+  display: grid;
+  place-items: center;
+  font-size: 15px;
+  font-weight: 900;
+  background: var(--ink-2);
+  box-shadow: inset 0 0 0 3px var(--ink-3);
+  color: var(--muted);
+}
+.pnode.league .pn-dot {
+  width: 56px;
+  height: 56px;
+  font-size: 26px;
+}
+.pnode.reached .pn-dot {
+  background: var(--lc);
+  color: var(--ink);
+  box-shadow:
+    0 4px 0 rgba(0, 0, 0, 0.35),
+    0 0 18px color-mix(in srgb, var(--lc) 60%, transparent);
+}
+.pnode.next .pn-dot {
+  box-shadow:
+    inset 0 0 0 3px var(--lc),
+    0 0 0 6px color-mix(in srgb, var(--lc) 25%, transparent);
+  color: var(--paper);
+  animation: pulse 1.4s ease-in-out infinite;
+}
+.pnode.locked {
+  opacity: 0.6;
+}
+.pnode.locked.league .pn-dot {
+  filter: grayscale(1);
+}
+.pn-label {
+  position: absolute;
+  top: 50%;
+  transform: translateY(-50%);
+  white-space: nowrap;
+  font-size: 14px;
+  font-weight: 900;
+  font-variant-numeric: tabular-nums;
+}
+.pn-label.right {
+  left: calc(100% + 10px);
+}
+.pn-label.left {
+  right: calc(100% + 10px);
+}
+.pnode.locked .pn-label {
+  color: var(--muted);
+  font-weight: 700;
+}
+.you-marker {
+  position: absolute;
+  transform: translate(-50%, -50%);
+  z-index: 3;
+  pointer-events: none;
+  animation: intro-in 0.5s cubic-bezier(0.2, 1.4, 0.4, 1) 0.2s backwards;
+}
+.you-ring {
+  display: block;
+  width: 26px;
+  height: 26px;
+  border-radius: 50%;
+  background: #fff;
+  box-shadow:
+    0 0 0 5px var(--pink),
+    0 0 24px 6px rgba(255, 61, 139, 0.7);
+}
+.you-bubble {
+  position: absolute;
+  bottom: calc(100% + 12px);
+  left: 50%;
+  transform: translateX(-50%);
+  white-space: nowrap;
+  padding: 6px 12px;
+  border-radius: 999px;
+  background: var(--pink);
+  color: #fff;
+  font-weight: 900;
+  font-size: 14px;
+  box-shadow: var(--shadow);
+  font-variant-numeric: tabular-nums;
+}
+.you-bubble::after {
+  content: "";
+  position: absolute;
+  top: 100%;
+  left: 50%;
+  margin-left: -6px;
+  border: 6px solid transparent;
+  border-top-color: var(--pink);
+}
+.path-cta {
+  display: grid;
+  gap: 6px;
+  text-align: center;
+  font-size: 12px;
+}
+
+/* ---------- Trophäen-Runde ---------- */
+.t-hud {
+  flex: 1;
+  display: grid;
+  justify-items: center;
+  gap: 2px;
+  font-weight: 800;
+}
+.t-task {
+  font-size: 15px;
+}
+.t-task b {
+  font-size: 18px;
+}
+.t-streak {
+  font-size: 13px;
+  color: var(--muted);
+  transition: color 0.2s;
+}
+.t-streak.hot {
+  color: var(--yellow);
+}
+.t-round {
+  min-width: 92px;
+  text-align: right;
+  font-size: 15px;
+  font-weight: 900;
+  font-variant-numeric: tabular-nums;
+}
+.pos {
+  color: var(--lime);
+}
+.neg {
+  color: #ff8fa3;
+}
+.float-text.t-gain {
+  color: var(--lime);
+}
+.float-text.t-streakbonus {
+  top: 58%;
+  font-size: 26px;
+  color: var(--yellow);
+}
+
+/* ---------- Liga-Aufstieg ---------- */
+.league-up {
+  position: fixed;
+  inset: 0;
+  z-index: 70;
+  display: grid;
+  place-items: center;
+  padding: 24px;
+  background: rgba(10, 6, 18, 0.82);
+  overflow: hidden;
+  animation: screen-in 0.25s;
+}
+.league-up.out {
+  opacity: 0;
+  transition: opacity 0.25s;
+}
+.lu-rays {
+  position: absolute;
+  width: 160vmax;
+  height: 160vmax;
+  background: repeating-conic-gradient(color-mix(in srgb, var(--lc) 30%, transparent) 0 10deg, transparent 10deg 20deg);
+  animation: spin 14s linear infinite;
+  mask-image: radial-gradient(circle, #000 0 20%, transparent 55%);
+}
+@keyframes spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+.lu-card {
+  position: relative;
+  display: grid;
+  justify-items: center;
+  gap: 8px;
+  width: min(100%, 360px);
+  padding: 28px 22px 22px;
+  border-radius: 30px;
+  background: var(--ink-2);
+  box-shadow:
+    inset 0 0 0 3px var(--lc),
+    0 20px 60px rgba(0, 0, 0, 0.5);
+  text-align: center;
+  animation: lu-pop 0.6s cubic-bezier(0.2, 1.5, 0.4, 1);
+}
+@keyframes lu-pop {
+  from {
+    transform: scale(0.4) rotate(-8deg);
+    opacity: 0;
+  }
+}
+.lu-kicker {
+  font-size: 14px;
+  font-weight: 900;
+  letter-spacing: 0.14em;
+  color: var(--lc);
+}
+.lu-emoji {
+  font-size: 84px;
+  line-height: 1.1;
+  animation: bob 1.8s ease-in-out infinite;
+}
+.lu-name {
+  font-size: 46px;
+  font-weight: 900;
+  letter-spacing: 0.02em;
+  line-height: 1;
+  color: var(--lc);
+  text-shadow: 0 4px 0 rgba(0, 0, 0, 0.35);
+}
+.lu-sub {
+  font-size: 16px;
+  font-weight: 800;
+  color: var(--muted);
+  margin-bottom: 8px;
+}
+
+/* ---------- Ergebnis Trophäen-Runde ---------- */
+.trophy-result {
+  gap: 14px;
+}
+.tr-head {
+  display: grid;
+  justify-items: center;
+  gap: 6px;
+  text-align: center;
+}
+.tr-kicker {
+  font-size: 13px;
+  font-weight: 900;
+  letter-spacing: 0.14em;
+  color: var(--muted);
+}
+.tr-total {
+  font-size: clamp(54px, 18vw, 80px);
+  font-weight: 900;
+  line-height: 1;
+  font-variant-numeric: tabular-nums;
+  text-shadow: 0 5px 0 rgba(0, 0, 0, 0.35);
+}
+.tr-status {
+  font-weight: 700;
+  color: var(--muted);
+  animation: pulse 1s infinite;
+}
+.tr-stand {
+  display: grid;
+  grid-template-columns: 1fr auto 1fr;
+  align-items: center;
+  gap: 8px;
+  padding: 12px 14px;
+  border-radius: 18px;
+  background: var(--ink-2);
+  text-align: center;
+}
+.tr-stand span {
+  display: block;
+  font-size: 12px;
+  color: var(--muted);
+}
+.tr-stand b {
+  font-size: 24px;
+  font-weight: 900;
+  font-variant-numeric: tabular-nums;
+}
+.tr-arrow {
+  color: var(--muted);
+  font-size: 20px;
+}
+.tr-league {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  gap: 10px;
+  font-size: 14px;
+}
+.tr-rows {
+  margin: 0;
+  display: grid;
+  gap: 2px;
+  padding: 10px 14px;
+  border-radius: 18px;
+  background: var(--ink-2);
+}
+.tr-rows > div {
+  display: flex;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 6px 0;
+  font-size: 15px;
+}
+.tr-rows dt {
+  color: var(--muted);
+}
+.tr-rows dd {
+  margin: 0;
+  font-weight: 800;
+  font-variant-numeric: tabular-nums;
+}
+.tr-rows .sep {
+  border-top: 1px solid var(--ink-3);
+  margin-top: 4px;
+  padding-top: 10px;
+}
+.tr-rows .total {
+  border-top: 2px solid var(--ink-3);
+  margin-top: 4px;
+  padding-top: 10px;
+}
+.tr-rows .total dt {
+  color: var(--paper);
+  font-weight: 900;
+}
+.tr-rows .total dd {
+  font-size: 18px;
+  font-weight: 900;
+}
+
+/* ---------- Weltrangliste ---------- */
+.wr-me {
+  display: flex;
+  gap: 14px;
+  align-items: center;
+  padding: 14px;
+  border-radius: 20px;
+  background: linear-gradient(135deg, rgba(255, 61, 139, 0.22), rgba(164, 92, 255, 0.22));
+  box-shadow: inset 0 0 0 2px var(--pink);
+}
+.wr-rank {
+  display: grid;
+  justify-items: center;
+  min-width: 82px;
+}
+.wr-rank span,
+.wr-rank small {
+  font-size: 11px;
+  color: var(--muted);
+}
+.wr-rank b {
+  font-size: 30px;
+  font-weight: 900;
+  line-height: 1.1;
+}
+.wr-info {
+  display: grid;
+  gap: 4px;
+  min-width: 0;
+  font-size: 13px;
+}
+.wr-info > b {
+  font-size: 18px;
+}
+.wr-info .league-badge {
+  justify-self: start;
+}
+.wr-note {
+  margin: 4px 0 0;
+  font-size: 12px;
+  text-align: center;
+}
+.trow {
+  width: 100%;
+  text-align: left;
+}
+.trow .nm,
+.fr-row .nm {
+  display: grid;
+  min-width: 0;
+}
+.trow .nm small,
+.fr-row .nm small {
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--lc);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.trow b {
+  font-size: 17px;
+  white-space: nowrap;
+}
+.wr-gap {
+  text-align: center;
+  color: var(--muted);
+  font-size: 22px;
+  line-height: 0.6;
+}
+
+/* ---------- Spielerprofil ---------- */
+.pm-head {
+  display: grid;
+  justify-items: center;
+  gap: 8px;
+  text-align: center;
+}
+.pm-avatar {
+  width: 72px;
+  height: 72px;
+  border-radius: 50%;
+  display: grid;
+  place-items: center;
+  font-size: 34px;
+  font-weight: 900;
+  color: var(--ink);
+  background: var(--lc);
+  box-shadow: 0 5px 0 rgba(0, 0, 0, 0.35);
+}
+.pm-stats {
+  margin: 0;
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+}
+.pm-stats > div {
+  display: grid;
+  gap: 2px;
+  padding: 10px 12px;
+  border-radius: 14px;
+  background: var(--ink);
+}
+.pm-stats dt {
+  font-size: 12px;
+  color: var(--muted);
+}
+.pm-stats dd {
+  margin: 0;
+  font-size: 18px;
+  font-weight: 900;
+  font-variant-numeric: tabular-nums;
+}
+
+/* ---------- Freunde ---------- */
+.friends {
+  gap: 14px;
+}
+.fr-search {
+  display: grid;
+  gap: 8px;
+}
+.fr-search input {
+  min-height: 52px;
+}
+.fr-body {
+  display: grid;
+  gap: 18px;
+}
+.fr-body section {
+  display: grid;
+  gap: 8px;
+}
+.fr-body h4 {
+  margin: 0;
+  font-size: 16px;
+  font-weight: 900;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.pill-count {
+  padding: 2px 9px;
+  border-radius: 999px;
+  background: var(--pink);
+  font-size: 13px;
+}
+.fr-row {
+  gap: 10px;
+}
+.fr-row .nm {
+  flex: 1;
+}
+.fr-friend {
+  width: 100%;
+  text-align: left;
+}
+.fr-friend b {
+  font-size: 17px;
+}
+.fr-actions {
+  display: flex;
+  gap: 6px;
+  flex: none;
+}
+.fr-actions .btn {
+  width: auto;
+  min-height: 40px;
+  padding: 8px 12px;
+  font-size: 14px;
+}
+.fr-state {
+  font-size: 13px;
+  font-weight: 800;
+  color: var(--muted);
+  padding: 0 4px;
+}
+
+@media (max-width: 360px) {
+  .btn.big {
+    font-size: 17px;
+  }
+  .ps-count {
+    font-size: 28px;
+  }
+}

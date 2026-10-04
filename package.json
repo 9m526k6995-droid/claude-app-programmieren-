@@ -9,7 +9,8 @@
     "build": "node build.mjs",
     "build:single": "node build.mjs --single",
     "typecheck": "tsc -p .",
-    "test": "tsc -p . && node tests/run-unit.mjs && node tests/leaderboard-mock.mjs",
+    "test": "tsc -p . && node tests/run-unit.mjs",
+    "test:sql": "bash tests/run-sql.sh",
     "test:e2e": "node tests/e2e.mjs",
     "preview": "node build.mjs && npx --yes serve dist"
   },

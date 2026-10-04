@@ -31,6 +31,15 @@ Schnell und richtig gibt bis zu 100 Punkte pro Challenge, maximal 1000. Die Schw
 
 Beim Öffnen erscheint ein Startmenü mit **Anmelden** und **Registrieren** (E-Mail + Passwort, echte Authentifizierung über Supabase Auth). Das Spiel ist erst nach der Anmeldung erreichbar. Die Sitzung bleibt nach dem Neuladen erhalten und wird automatisch erneuert. Abmelden geht über ⚙️ → **Abmelden**.
 
+### Trophäen, Weltrangliste und Freunde
+
+- **Flamme oben links** zeigt den Trophäenstand (z. B. 🔥 2.460) und öffnet den **Trophäenpfad**: ein geschwungener Pfad von 0 bis 20.000 mit Meilensteinen und 8 Ligen (Anfänger, Bronze, Silber, Gold, Platin, Diamant, Meister, Legende).
+- **Trophäen-Modus**: 15 Aufgaben aus allen Minispielen. Richtig +10, schnell +2, sehr schnell +3, falsch oder Zeit um −8, Serienbonus bei 5/10/15 richtigen am Stück. Schwierigkeit steigt mit dem Trophäenstand.
+- **Weltrangliste** (Tab „Welt“): ausschließlich nach Trophäen absteigend, Top 100, eigener Rang und Nachbarn.
+- **Freunde**: Spieler über den Namen suchen, Anfragen senden/annehmen/ablehnen, Freunde ansehen und entfernen.
+- Die Trophäen rechnet der **Server** aus (Supabase-Funktionen in `supabase/trophies.sql`), nicht das Handy.
+- Jede Aufgabe hat eine kurze **Orientierungsphase** (0,9–1,8 s), in der die Zeit noch nicht läuft.
+
 ### Spielmodi
 
 - **Daily** – jeden Tag eine neue Runde, für alle exakt gleich (gleiche Reihenfolge, gleiche Felder, gleiche Wartezeiten). Nur der erste Versuch zählt.
@@ -73,8 +82,9 @@ Dann <http://localhost:5173> öffnen. Zum Testen auf dem Handy: Handy ins selbe 
 | `npm run dev` | Lokaler Server mit automatischem Neu-Bauen |
 | `npm run build` | Fertige App nach `dist/` (zum Hochladen) |
 | `npm run build:single` | Die ganze App in **einer** HTML-Datei (`dist-single/index.html`) |
-| `npm test` | Typprüfung, Logik-Tests, Bestenlisten-Test |
-| `npm run test:e2e` | Echter Browser-Test auf Handy-Größe gegen einen nachgebauten Supabase-Auth-Server: Startmenü, Registrierung, Login, Fehlerfälle, Sitzung, Logout, dann Daily, Duell, Endlos, Teilen (vorher einmal `npx playwright install chromium`) |
+| `npm test` | Typprüfung und Logik-Tests |
+| `npm run test:sql` | Datenbank-Tests gegen echte Postgres (`ZWIP_TEST_PG` setzen) |
+| `npm run test:e2e` | Echter Browser-Test (braucht Postgres über `ZWIP_TEST_PG`) auf Handy-Größe gegen einen nachgebauten Supabase-Auth-Server: Startmenü, Registrierung, Login, Fehlerfälle, Sitzung, Logout, dann Daily, Duell, Endlos, Teilen (vorher einmal `npx playwright install chromium`) |
 
 ## Technik
 
@@ -94,7 +104,12 @@ src/
   main.ts         Screens, Spielablauf, Teilen, Bestenliste
   auth.ts         Anmeldung, Registrierung, Sitzung, Logout (Supabase Auth)
   startmenu.ts    Startmenü, Anmelde- und Registrierungsformular
-  games.ts        Die 12 Mini-Challenges
+  games.ts        Die 12 Mini-Challenges (zentrale Liste inkl. Vorbereitungszeit und Tempo-Grenzen)
+  trophies.ts     Trophäen-Logik: Ligen, Meilensteine, Berechnung, Schwierigkeit
+  social.ts       Verbindung zu Trophäen, Weltrangliste und Freunden (Supabase-Funktionen)
+  trophyUi.ts     Trophäenpfad, Liga-Aufstieg, Ergebnis, Weltrangliste, Spielerprofil
+  friendsUi.ts    Freunde-Bereich
+  ui.ts           Kleine UI-Helfer
   run.ts          Rundenaufbau, Punkte, Bewertung
   rng.ts          Seed-Zufall, Daily-Nummer
   state.ts        Spielstand, Streaks, Crew
@@ -104,13 +119,14 @@ src/
   fx.ts           Konfetti & Effekte
   style.css       Design
 supabase/profiles.sql Benutzerprofile (Grundlage für Highscores, Fortschritt usw.)
-supabase/schema.sql   Datenbank für die Online-Bestenliste
+supabase/trophies.sql Trophäen, Weltrangliste, Freunde (Funktionen + Sicherheitsregeln)
+supabase/schema.sql   Alte Tages-Punkteliste (wird nicht mehr genutzt)
 tests/                Logik-, Bestenlisten- und Browser-Tests
 ```
 
 ### Neue Challenge hinzufügen
 
-In `src/games.ts` ein neues `MicroGame`-Objekt anlegen, in `GAMES` eintragen und die ID in `GAME_IDS` (`src/run.ts`) ergänzen. Damit schon gespielte Dailies (und Duelle darauf) unverändert bleiben, `NEW_GAMES_FROM_DAY` bzw. `idsForDay` so anpassen, dass die neue Challenge erst ab der nächsten Daily dabei ist.
+In `src/games.ts` ein neues `MicroGame`-Objekt anlegen (mit `prep` = Orientierungszeit in ms und `speed` = Grenzen für den Tempobonus), in `GAMES` eintragen und die ID in `GAME_IDS` (`src/run.ts`) ergänzen. Im Training, Endlos- und Trophäen-Modus ist es dann automatisch dabei. Damit schon gespielte Dailies (und Duelle darauf) unverändert bleiben, `NEW_GAMES_FROM_DAY` bzw. `idsForDay` so anpassen, dass die neue Challenge erst ab der nächsten Daily dabei ist.
 
 ## Deployment
 

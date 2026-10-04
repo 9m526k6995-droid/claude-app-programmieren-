@@ -8,6 +8,17 @@ on:
 jobs:
   test:
     runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_HOST_AUTH_METHOD: trust
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready --health-interval 5s --health-timeout 5s --health-retries 10
+    env:
+      ZWIP_TEST_PG: host=localhost port=5432 user=postgres
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -15,5 +26,8 @@ jobs:
           node-version: 22
       - run: npm install
       - run: npm test
+      - name: Datenbank-Tests (Trophäen, Rangliste, Freunde)
+        run: npm run test:sql
       - run: npx playwright install --with-deps chromium
-      - run: npm run test:e2e
+      - name: Browser-Tests gegen echte Datenbank
+        run: npm run test:e2e

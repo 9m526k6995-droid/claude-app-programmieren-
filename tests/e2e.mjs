@@ -14,7 +14,56 @@ const SHOTS = path.resolve(process.env.SHOTS || ".tmp/shots");
 fs.mkdirSync(SHOTS, { recursive: true });
 
 // ---------- Nachgebauter Supabase-Auth-Server (gleiches Antwortformat wie GoTrue) ----------
-const mock = { users: new Map(), refresh: new Map(), access: new Map(), confirmMode: false, refreshCalls: 0, apikeyMissing: 0 };
+const mock = { users: new Map(), refresh: new Map(), access: new Map(), confirmMode: false, refreshCalls: 0, apikeyMissing: 0, rpcCalls: 0 };
+
+// ---------- Echte Postgres-Datenbank mit unseren Supabase-SQL-Dateien ----------
+// Lokal z. B.: ZWIP_TEST_PG="host=/tmp/pgz port=54329 user=postgres"   (CI: Postgres-Service)
+const PG = process.env.ZWIP_TEST_PG || "host=localhost user=postgres";
+const DB = "zwip_e2e";
+function psql(sql, db = DB) {
+  const r = spawnSync("psql", [`${PG} dbname=${db}`, "-At", "-v", "ON_ERROR_STOP=1", "-c", sql], { encoding: "utf8" });
+  return { ok: r.status === 0, out: r.stdout, err: r.stderr };
+}
+function psqlFile(file, db = DB) {
+  const r = spawnSync("psql", [`${PG} dbname=${db}`, "-q", "-v", "ON_ERROR_STOP=1", "-f", file], { encoding: "utf8" });
+  if (r.status !== 0) throw new Error(`SQL-Fehler in ${file}:\n${r.stderr}`);
+}
+{
+  const r = psql(`drop database if exists ${DB}`, "postgres");
+  if (!r.ok) {
+    console.error(`✘ Keine Postgres-Datenbank erreichbar (${PG}). Setze ZWIP_TEST_PG.\n${r.err}`);
+    process.exit(1);
+  }
+  psql(`create database ${DB}`, "postgres");
+  for (const f of ["tests/sql/supabase-shim.sql", "supabase/profiles.sql", "supabase/schema.sql", "supabase/trophies.sql"]) psqlFile(f);
+}
+const lit = (v) =>
+  v === null || v === undefined
+    ? "null"
+    : typeof v === "boolean" || typeof v === "number"
+      ? String(v)
+      : typeof v === "string"
+        ? `'${v.replace(/'/g, "''")}'`
+        : `'${JSON.stringify(v).replace(/'/g, "''")}'::jsonb`;
+/** Ruft eine Datenbank-Funktion so auf, wie PostgREST/Supabase es tut (Rolle + angemeldeter Benutzer). */
+function rpcCall(fn, args, user) {
+  if (!/^[a-z_]+$/.test(fn)) return { status: 404, body: { code: "PGRST202", message: "not found" } };
+  const named = Object.entries(args || {}).map(([k, v]) => `${k} := ${lit(v)}`).join(", ");
+  const role = user ? "authenticated" : "anon";
+  const sql = `begin; set local role ${role}; select set_config('request.jwt.claim.sub', '${user ? user.id : ""}', true) \\g /dev/null
+select 'ZWIPOUT:' || coalesce((public.${fn}(${named}))::text, 'null'); commit;`;
+  const r = spawnSync("psql", [`${PG} dbname=${DB}`, "-At", "-v", "ON_ERROR_STOP=1"], { input: sql, encoding: "utf8" });
+  mock.rpcCalls++;
+  if (r.status !== 0) {
+    const m = r.stderr.match(/ERROR:\s+(.*)/);
+    const msg = m ? m[1].trim() : r.stderr;
+    if (/permission denied/.test(msg)) return { status: 403, body: { code: "42501", message: msg } };
+    if (/does not exist/.test(msg)) return { status: 404, body: { code: "PGRST202", message: msg } };
+    return { status: 400, body: { code: "P0001", message: msg } };
+  }
+  const line = r.stdout.split("\n").find((l) => l.startsWith("ZWIPOUT:"));
+  return { status: 200, raw: line.slice(8) };
+}
 function issue(user) {
   const at = "at-" + randomUUID();
   const rt = "rt-" + randomUUID();
@@ -53,11 +102,13 @@ async function handleApi(req, res, url) {
       if (exists) return json(res, 200, { id: randomUUID(), email, identities: [] });
       const u = { id: randomUUID(), email, password, confirmed: false };
       mock.users.set(email, u);
+      psql(`insert into auth.users (id, email) values ('${u.id}', ${lit(email)})`);
       return json(res, 200, { id: u.id, email, identities: [{ id: u.id }], confirmation_sent_at: new Date().toISOString() });
     }
     if (exists) return json(res, 422, { code: 422, error_code: "user_already_exists", msg: "User already registered" });
     const u = { id: randomUUID(), email, password, confirmed: true };
     mock.users.set(email, u);
+    psql(`insert into auth.users (id, email) values ('${u.id}', ${lit(email)})`);
     return json(res, 200, issue(u));
   }
   if (p === "/auth/v1/token" && req.method === "POST") {
@@ -83,6 +134,15 @@ async function handleApi(req, res, url) {
   if (p === "/auth/v1/user") {
     const u = mock.access.get((req.headers.authorization || "").replace("Bearer ", ""));
     return u ? json(res, 200, { id: u.id, email: u.email }) : json(res, 401, { code: 401, msg: "invalid JWT" });
+  }
+  if (p.startsWith("/rest/v1/rpc/") && req.method === "POST") {
+    const user = mock.access.get((req.headers.authorization || "").replace("Bearer ", ""));
+    const r = rpcCall(p.slice("/rest/v1/rpc/".length), await readBody(req), user);
+    if (r.raw !== undefined) {
+      res.writeHead(200, { "Content-Type": "application/json" });
+      return res.end(r.raw);
+    }
+    return json(res, r.status, r.body);
   }
   if (p.startsWith("/rest/v1/")) {
     if (req.method === "HEAD") return res.writeHead(200, { "Content-Range": "0-0/0" }).end();
@@ -369,7 +429,7 @@ try {
   // 5) Zurück zum Home: Daily erledigt, Countdown läuft
   await A.page.click('.actions-2 [data-act="home"]', { force: true });
   await A.page.waitForSelector("#countdown");
-  check((await A.page.textContent(".streak-pill b")) === "1", "Home zeigt Streak 1");
+  check((await A.page.textContent(".streak-mini")).includes("1 Tag"), "Home zeigt Streak 1 (jetzt bei der Wochenleiste)");
   await A.page.screenshot({ path: `${SHOTS}/5-home-done.png` });
 
   // 5b) Logout → Startmenü, Fehlerfälle bei der Anmeldung, erneut anmelden
@@ -393,7 +453,7 @@ try {
   check((await A.page.inputValue("#auth-email")) === "lena@test.de", "E-Mail wird beim Wechsel zur Anmeldung übernommen");
   await fillAuth(A.page, "lena@test.de", "geheim123");
   await A.page.waitForSelector('[data-act="share-today"]', { timeout: 5000 });
-  check((await A.page.textContent(".streak-pill b")) === "1", "Nach erneutem Login: Daily-Ergebnis und Streak noch da");
+  check((await A.page.textContent(".streak-mini")).includes("1 Tag"), "Nach erneutem Login: Daily-Ergebnis und Streak noch da");
 
   // 5c) Abgelaufenes Token wird automatisch erneuert
   const before = mock.refreshCalls;
@@ -511,6 +571,197 @@ try {
   await B.page.waitForSelector(".home", { timeout: 4000 });
   check(true, "Training lässt sich abbrechen");
 
+  // ================= TROPHÄEN =================
+  const dbVal = (sql) => psql(sql).out.trim();
+  const tP = A.page;
+  await tP.goto(`${BASE}?e2e=1`);
+  await tP.waitForSelector('.trophy-pill, [data-auth="login"]');
+  if (await tP.isVisible('[data-auth="login"]')) {
+    await tP.click('[data-auth="login"]', { force: true });
+    await fillAuth(tP, "lena@test.de", "geheim123");
+  }
+  await tP.waitForSelector(".trophy-pill");
+  await tP.waitForFunction(() => document.getElementById("trophy-count")?.textContent === "0", null, { timeout: 5000 });
+  check(true, "Flamme oben links zeigt Trophäenstand (0) aus der Datenbank");
+  await tP.click(".trophy-pill", { force: true });
+  await tP.waitForSelector(".path-screen .you-marker");
+  check((await tP.locator(".pnode").count()) === 26, "Trophäenpfad mit 26 Meilensteinen (0 … 20.000)");
+  check((await tP.locator(".band").count()) === 8, "Trophäenpfad mit 8 Ligen");
+  check(await tP.isVisible(".name-banner"), "Hinweis: Spielername fehlt");
+  await tP.screenshot({ path: `${SHOTS}/t1-path-start.png` });
+
+  // Spielername beim ersten Start
+  await tP.click('[data-p="play"]', { force: true });
+  await tP.waitForSelector("#un-input");
+  await tP.fill("#un-input", "ab");
+  await tP.click("#un-save", { force: true });
+  await tP.waitForSelector(".modal .auth-error:not([hidden])");
+  check((await tP.textContent(".modal .auth-error")).includes("3–16 Zeichen"), "Ungültiger Spielername wird erklärt");
+  await tP.fill("#un-input", "Lena");
+  await tP.click("#un-save", { force: true });
+
+  // Trophäen-Runde: 15 Aufgaben mit echten Taps
+  await tP.waitForSelector(".trophy-play", { timeout: 8000 });
+  check(dbVal("select username from public.profiles where username = 'Lena'") === "Lena", "Spielername in der Datenbank gespeichert");
+  check((await tP.textContent(".t-task")).includes("/ 15"), "Anzeige „Aufgabe X / 15“");
+  let sawShield = false;
+  const prepChecks = [];
+  let tn = 0;
+  const seenT = [];
+  for (let i = 0; i < 15; i++) {
+    // Vorbereitungsphase: Aufgabe sichtbar, Eingaben gesperrt, Zeit läuft noch nicht
+    const shield = sawShield ? null : await tP.waitForSelector(".prep-shield", { timeout: 2500 }).catch(() => null);
+    if (shield) {
+      sawShield = true;
+      const c = await stageCenter(tP);
+      await tP.mouse.click(c.x, c.y);
+      prepChecks.push(await tP.evaluate(() => !document.querySelector(".stage.done-ok, .stage.done-fail")));
+      await tP.screenshot({ path: `${SHOTS}/t2-prep.png` });
+    }
+    const r = await solveRound(tP, tn);
+    tn = r.n;
+    seenT.push(r.id);
+    if (i === 6) await tP.screenshot({ path: `${SHOTS}/t3-trophy-play.png` });
+  }
+  check(sawShield && prepChecks.every(Boolean), "Vorbereitungsphase: Tippen während der Orientierung zählt nicht");
+  check(new Set(seenT).size === 12, `Alle 12 Minispiele kommen in der Trophäen-Runde vor (${seenT.join(", ")})`);
+  check(seenT.every((g, i) => i === 0 || g !== seenT[i - 1]), "Nie dasselbe Spiel direkt hintereinander");
+  await tP.waitForSelector(".tr-rows", { timeout: 30000 });
+  await tP.waitForFunction(() => !document.querySelector(".tr-status"), null, { timeout: 30000 });
+  await tP.waitForTimeout(1200);
+  if (await tP.isVisible(".league-up")) await tP.click(".league-up button", { force: true });
+  const shownDelta = (await tP.textContent("#tr-delta")).replace(/[^\d−-]/g, "").replace("−", "-");
+  const dbTrophies = Number(dbVal("select trophies from public.profiles where username = 'Lena'"));
+  check(dbTrophies > 100 && Number(shownDelta) === dbTrophies, `Server hat ${dbTrophies} Trophäen gutgeschrieben, Anzeige stimmt (${shownDelta})`);
+  check(dbVal("select trophy_rounds || '/' || (best_streak > 0) from public.profiles where username = 'Lena'") === "1/true", "Runden und beste Serie in der Datenbank");
+  check((await tP.textContent(".tr-rows")).includes("Geschwindigkeitsbonus"), "Ergebnisseite mit Aufschlüsselung");
+  await tP.screenshot({ path: `${SHOTS}/t4-result.png`, fullPage: true });
+
+  await tP.click('[data-r="path"]', { force: true });
+  await tP.waitForSelector(".path-screen");
+  await tP.waitForFunction((t) => document.getElementById("ps-trophies")?.textContent === t, dbTrophies.toLocaleString("de-DE"), { timeout: 5000 });
+  check(true, "Trophäenpfad zeigt neuen Stand");
+  await tP.screenshot({ path: `${SHOTS}/t5-path-after.png` });
+  await tP.click('[data-p="back"]', { force: true });
+  await tP.waitForFunction((t) => document.getElementById("trophy-count")?.textContent === t, dbTrophies.toLocaleString("de-DE"), { timeout: 5000 });
+  check(true, "Flamme aktualisiert sich nach der Runde automatisch");
+
+  // Liga-Aufstieg: kurz vor Bronze setzen und eine Runde spielen
+  psql("update public.profiles set trophies = 990, best_trophies = 990 where username = 'Lena'");
+  await tP.goto(`${BASE}?e2e=1`);
+  await tP.waitForSelector(".trophy-pill");
+  await tP.click(".trophy-pill", { force: true });
+  await tP.waitForSelector('[data-p="play"]');
+  await tP.click('[data-p="play"]', { force: true });
+  await tP.waitForSelector(".trophy-play", { timeout: 8000 });
+  tn = 0;
+  for (let i = 0; i < 15; i++) tn = (await solveRound(tP, tn)).n;
+  await tP.waitForSelector(".league-up", { timeout: 30000 });
+  check((await tP.textContent(".lu-name")) === "BRONZE" && (await tP.textContent(".lu-kicker")) === "NEUE LIGA ERREICHT!", "Animation „NEUE LIGA ERREICHT! BRONZE“");
+  await tP.waitForTimeout(700);
+  await tP.screenshot({ path: `${SHOTS}/t6-league-up.png` });
+  await tP.click(".league-up button", { force: true });
+  await tP.waitForSelector(".league-up", { state: "detached" });
+
+  // Abbrechen: Rest zählt als falsch
+  const beforeAbort = Number(dbVal("select trophies from public.profiles where username = 'Lena'"));
+  await tP.click('[data-r="again"]', { force: true });
+  await tP.waitForSelector(".trophy-play", { timeout: 8000 });
+  tn = (await solveRound(tP, 0)).n;
+  await tP.click('[data-act="tquit"]', { force: true });
+  await tP.click("#tq-yes", { force: true });
+  await tP.waitForSelector(".tr-rows", { timeout: 10000 });
+  await tP.waitForFunction(() => !document.querySelector(".tr-status"), null, { timeout: 40000 });
+  const afterAbort = Number(dbVal("select trophies from public.profiles where username = 'Lena'"));
+  check(afterAbort < beforeAbort, `Abbruch wird gewertet: ${beforeAbort} → ${afterAbort}`);
+
+  // Weltrangliste: viele Spieler anlegen, Sortierung prüfen
+  psql(`insert into auth.users (id, email) select gen_random_uuid(), 'bot' || i || '@x.de' from generate_series(1, 120) i;
+        update public.profiles p set username = 'Bot' || x.n, trophies = 2000 + x.n * 50, best_trophies = 2000 + x.n * 50,
+          trophies_updated_at = now() - (x.n || ' minutes')::interval
+        from (select id, row_number() over (order by id) n from public.profiles where username is null and id in (select id from auth.users where email like 'bot%')) x
+        where p.id = x.id;
+        insert into auth.users (id, email) values ('11111111-2222-3333-4444-555555555555', 'profi@x.de'), ('11111111-2222-3333-4444-666666666666', 'mittel@x.de');
+        update public.profiles set username = 'Profi', trophies = 15000, best_trophies = 15000 where id = '11111111-2222-3333-4444-555555555555';
+        update public.profiles set username = 'Mittel', trophies = 5000, best_trophies = 5000 where id = '11111111-2222-3333-4444-666666666666';
+        insert into auth.users (id, email) values ('11111111-2222-3333-4444-777777777777', 'neu@x.de');
+        update public.profiles set username = 'Neuling', trophies = 40, best_trophies = 40 where id = '11111111-2222-3333-4444-777777777777';`);
+  await tP.goto(`${BASE}?e2e=1`);
+  await tP.waitForSelector('[data-act="board"]');
+  await tP.click('[data-act="board"]', { force: true });
+  await tP.click('[data-act="tab-world"]', { force: true });
+  await tP.waitForSelector(".trow", { timeout: 8000 });
+  const rows = await tP.$$eval(".trow", (els) =>
+    els.map((e) => ({ name: e.dataset.player, t: Number(e.querySelector("b").textContent.replace(/\D/g, "")), me: e.classList.contains("me"), rank: e.querySelector(".rk").textContent })),
+  );
+  const top = rows.slice(0, 100);
+  check(top.length === 100, "Weltrangliste zeigt die besten 100");
+  check(top.every((r, i) => i === 0 || r.t <= top[i - 1].t), "Weltrangliste nach Trophäen ABSTEIGEND sortiert");
+  check(top[0].name === "Profi" && top[0].t === 15000, "Platz 1 = Spieler mit den meisten Trophäen (Profi, 15.000)");
+  check(top.findIndex((r) => r.name === "Profi") < top.findIndex((r) => r.name === "Mittel"), "15.000 Trophäen steht VOR 5.000 Trophäen");
+  check(rows.some((r) => r.me && r.name === "Lena"), "Eigener Eintrag hervorgehoben");
+  check(await tP.isVisible(".wr-gap"), "Außerhalb der Top 100: eigener Rang unter der Liste");
+  const myRankDb = dbVal("select world_rank from public.zwip_ranked() where username = 'Lena'");
+  check((await tP.textContent(".wr-rank b")) === `#${myRankDb}`, `Eigener Weltrang #${myRankDb} korrekt`);
+  const wrInfo = await tP.textContent(".wr-info");
+  check(wrInfo.includes("Vor dir") && wrInfo.includes("Hinter dir: Neuling"), "Spieler vor und hinter mir werden angezeigt");
+  const tail = rows.slice(100).map((r) => r.name);
+  check(tail.length === 3 && tail[1] === "Lena" && tail[2] === "Neuling", `Unter der Liste: Nachbar, ich, Nachbar (${tail.join(", ")})`);
+  check(!(await tP.content()).includes("@test.de"), "Keine E-Mail-Adressen in der Rangliste");
+  await tP.screenshot({ path: `${SHOTS}/t7-world.png` });
+  await tP.click('.trow[data-player="Profi"]', { force: true });
+  await tP.waitForSelector(".pm-stats");
+  check((await tP.textContent(".pm-stats")).includes("15.000"), "Spielerprofil aus der Rangliste");
+  await tP.click(".modal [data-close]", { force: true });
+
+  // ================= FREUNDE =================
+  const fB = B.page; // Tom
+  await fB.goto(`${BASE}?e2e=1`);
+  await fB.waitForSelector('[data-act="friends"]');
+  await fB.click('[data-act="friends"]', { force: true });
+  await fB.waitForSelector(".friends .name-banner");
+  await fB.click(".friends .name-banner", { force: true });
+  await fB.fill("#un-input", "Tom");
+  await fB.click("#un-save", { force: true });
+  await fB.waitForSelector("#fr-q");
+  await fB.fill("#fr-q", "le");
+  await fB.waitForSelector('[data-add="Lena"]', { timeout: 5000 });
+  check(true, "Spieler über den Namen gefunden");
+  await fB.click('[data-add="Lena"]', { force: true });
+  await fB.waitForSelector(".toast");
+  check((await fB.textContent(".toast")).includes("Anfrage gesendet"), "Freundschaftsanfrage gesendet");
+  await fB.waitForSelector('[data-cancel="Lena"]');
+  check(true, "Gesendete Anfrage sichtbar");
+  await fB.fill("#fr-q", "lena");
+  await fB.waitForFunction(() => document.querySelector("#fr-results")?.textContent.includes("Angefragt"), null, { timeout: 5000 });
+  check(true, "Doppelte Anfrage nicht möglich (Status „Angefragt“)");
+  await fB.screenshot({ path: `${SHOTS}/f1-search.png` });
+
+  await tP.click('[data-act="home"]', { force: true });
+  await tP.click('[data-act="friends"]', { force: true });
+  await tP.waitForSelector('[data-accept="Tom"]', { timeout: 5000 });
+  check(true, "Eingehende Anfrage bei Lena sichtbar");
+  await tP.screenshot({ path: `${SHOTS}/f2-incoming.png` });
+  await tP.click('[data-accept="Tom"]', { force: true });
+  await tP.waitForSelector('[data-friend="Tom"]', { timeout: 5000 });
+  check(dbVal("select status from public.friendships") === "accepted", "Freundschaft in der Datenbank: accepted");
+  psql("update public.profiles set trophies = 9000, best_trophies = 9000 where username = 'Tom'");
+  await tP.click('[data-act="home"]', { force: true }).catch(() => {});
+  await tP.goto(`${BASE}?e2e=1`);
+  await tP.click('[data-act="friends"]', { force: true });
+  await tP.waitForSelector('[data-friend="Tom"]');
+  check((await tP.textContent('[data-friend="Tom"]')).includes("Platin"), "Freund mit Trophäen und Liga");
+  await tP.screenshot({ path: `${SHOTS}/f3-friends.png` });
+  await tP.click('[data-friend="Tom"]', { force: true });
+  await tP.waitForSelector(".pm-stats");
+  check((await tP.textContent(".pm-stats")).includes("9.000"), "Profil des Freundes");
+  await tP.screenshot({ path: `${SHOTS}/f4-profile.png` });
+  await tP.click("#pm-action", { force: true });
+  check((await tP.textContent("#pm-action")).includes("Nochmal tippen"), "Entfernen braucht Bestätigung");
+  await tP.click("#pm-action", { force: true });
+  await tP.waitForFunction(() => !document.querySelector('[data-friend="Tom"]'), null, { timeout: 5000 });
+  check(dbVal("select count(*) from public.friendships") === "0", "Freund entfernt (auch in der Datenbank)");
+
   // 10) Kaputter Link wird abgefangen
   const C = await newPage();
   await C.page.goto(`${BASE}?c=kaputt123&e2e=1`);
@@ -521,7 +772,7 @@ try {
   const aDaily = Object.values(st.daily)[0];
   check(aDaily.rounds.length === 10, "Daily hat 10 Runden");
 
-  check(mock.apikeyMissing === 0, "Jede Auth-Anfrage schickt den öffentlichen anon Key mit");
+  check(mock.apikeyMissing === 0, "Jede Anfrage schickt den öffentlichen anon Key mit");
   check(errors.length === 0, `Keine JS-Fehler${errors.length ? ": " + errors.join(" | ") : ""}`);
 } catch (e) {
   console.error(e);
