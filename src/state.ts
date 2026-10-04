@@ -1,4 +1,4 @@
-// Lokaler Spielstand. Kein Login nötig – alles liegt erst einmal auf dem Gerät.
+// Lokaler Spielstand auf dem Gerät (Daily-Ergebnisse, Streak, Crew, Einstellungen).
 
 export interface DayResult {
   score: number;

@@ -10,7 +10,7 @@
     "build:single": "node build.mjs --single",
     "typecheck": "tsc -p .",
     "test": "tsc -p . && node tests/run-unit.mjs && node tests/leaderboard-mock.mjs",
-    "test:e2e": "node build.mjs && node tests/e2e.mjs",
+    "test:e2e": "node tests/e2e.mjs",
     "preview": "node build.mjs && npx --yes serve dist"
   },
   "devDependencies": {

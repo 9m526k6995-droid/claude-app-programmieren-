@@ -2,7 +2,7 @@
 
 **10 Blitz-Challenges. 30 Sekunden. Jeden Tag neu. Für alle gleich.**
 
-ZWIP ist ein Mobile-first Web-Game für Jugendliche und junge Erwachsene. App öffnen, einmal tippen, spielen. Kein Login, keine Installation, keine Werbung, keine Lootboxen.
+ZWIP ist ein Mobile-first Web-Game für Jugendliche und junge Erwachsene. Kostenlos anmelden, einmal tippen, spielen. Keine Installation, keine Werbung, keine Lootboxen.
 
 ## Was man macht
 
@@ -20,6 +20,10 @@ Eine Runde besteht aus 10 Mini-Challenges, die jeweils nur 1–3 Sekunden dauern
 | 👉 | Wisch den Pfeil | In Pfeilrichtung wischen – oder genau andersrum |
 
 Schnell und richtig gibt bis zu 100 Punkte pro Challenge, maximal 1000. Die Schwierigkeit steigt innerhalb der Runde.
+
+### Anmeldung
+
+Beim Öffnen erscheint ein Startmenü mit **Anmelden** und **Registrieren** (E-Mail + Passwort, echte Authentifizierung über Supabase Auth). Das Spiel ist erst nach der Anmeldung erreichbar. Die Sitzung bleibt nach dem Neuladen erhalten und wird automatisch erneuert. Abmelden geht über ⚙️ → **Abmelden**.
 
 ### Spielmodi
 
@@ -46,10 +50,11 @@ Schnell und richtig gibt bis zu 100 Punkte pro Challenge, maximal 1000. Die Schw
 
 ## Schnellstart
 
-Voraussetzung: [Node.js](https://nodejs.org) ab Version 20.
+Voraussetzung: [Node.js](https://nodejs.org) ab Version 20 und ein kostenloses Supabase-Projekt (Einrichtung siehe [DEPLOYMENT.md](DEPLOYMENT.md#supabase-einrichten-anmeldung--bestenliste)).
 
 ```bash
 npm install
+cp .env.example .env   # Supabase-URL und publishable Key eintragen
 npm run dev
 ```
 
@@ -63,7 +68,7 @@ Dann <http://localhost:5173> öffnen. Zum Testen auf dem Handy: Handy ins selbe 
 | `npm run build` | Fertige App nach `dist/` (zum Hochladen) |
 | `npm run build:single` | Die ganze App in **einer** HTML-Datei (`dist-single/index.html`) |
 | `npm test` | Typprüfung, Logik-Tests, Bestenlisten-Test |
-| `npm run test:e2e` | Echter Browser-Test auf Handy-Größe: spielt eine Daily, Duell, Endlos, Teilen (vorher einmal `npx playwright install chromium`) |
+| `npm run test:e2e` | Echter Browser-Test auf Handy-Größe gegen einen nachgebauten Supabase-Auth-Server: Startmenü, Registrierung, Login, Fehlerfälle, Sitzung, Logout, dann Daily, Duell, Endlos, Teilen (vorher einmal `npx playwright install chromium`) |
 
 ## Technik
 
@@ -72,14 +77,17 @@ Bewusst schlank, damit die App in unter einer Sekunde startet (~55 KB insgesamt)
 - TypeScript ohne Framework, gebündelt mit esbuild
 - Sounds werden live per Web Audio erzeugt (keine Audiodateien)
 - Animationen per CSS, Konfetti per Canvas
+- Anmeldung über Supabase Auth (E-Mail + Passwort), direkt über die Auth-REST-API ohne Zusatzpaket
 - Spielstand im `localStorage` des Geräts
 - Tägliche Runde aus einem Seed (`zwip-daily-<Tag>`) → für alle gleich, ohne Server
 - Installierbar als Web-App (PWA) mit Offline-Cache
-- Optional: Supabase (Postgres) für die weltweite Bestenliste, abgesichert über Row Level Security
+- Supabase (Postgres) für Profile und die weltweite Bestenliste, abgesichert über Row Level Security
 
 ```
 src/
   main.ts         Screens, Spielablauf, Teilen, Bestenliste
+  auth.ts         Anmeldung, Registrierung, Sitzung, Logout (Supabase Auth)
+  startmenu.ts    Startmenü, Anmelde- und Registrierungsformular
   games.ts        Die 8 Mini-Challenges
   run.ts          Rundenaufbau, Punkte, Bewertung
   rng.ts          Seed-Zufall, Daily-Nummer
@@ -89,6 +97,7 @@ src/
   sound.ts        Sounds
   fx.ts           Konfetti & Effekte
   style.css       Design
+supabase/profiles.sql Benutzerprofile (Grundlage für Highscores, Fortschritt usw.)
 supabase/schema.sql   Datenbank für die Online-Bestenliste
 tests/                Logik-, Bestenlisten- und Browser-Tests
 ```

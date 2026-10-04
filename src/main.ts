@@ -27,6 +27,8 @@ import {
 import { confetti, floatText, shake, countUp } from "./fx";
 import { submitScore, fetchBoard, fetchRank } from "./leaderboard";
 import { hasGlobalBoard, publicBase, CONFIG } from "./config";
+import { restoreSession, currentUser, signOut, onAuthChange } from "./auth";
+import { renderStart } from "./startmenu";
 
 declare const __ZWIP_SINGLE__: boolean;
 
@@ -217,7 +219,7 @@ function home() {
         <div class="muted next">Neue Daily in <b id="countdown">${fmtCountdown(msUntilNextDay())}</b></div>
       </div>`;
   } else {
-    main = `<button class="play-btn" data-act="daily"><span class="play-ico">▶</span><span><b>Daily #${t} spielen</b><small>30 Sekunden · ohne Anmeldung</small></span></button>`;
+    main = `<button class="play-btn" data-act="daily"><span class="play-ico">▶</span><span><b>Daily #${t} spielen</b><small>30 Sekunden · jeden Tag neu</small></span></button>`;
   }
 
   app.innerHTML = `
@@ -687,13 +689,22 @@ function settings() {
      <label class="lbl" for="set-name">Dein Name</label>
      <input id="set-name" maxlength="20" value="${esc(S.name)}" autocomplete="nickname">
      <label class="toggle"><input type="checkbox" id="set-sound" ${S.muted ? "" : "checked"}> Sound</label>
+     <div class="account-box">
+       <div><span class="lbl">Angemeldet als</span><b class="account-mail">${esc(currentUser()?.email ?? "")}</b></div>
+       <button class="btn ghost sm" id="set-logout" type="button">Abmelden</button>
+     </div>
      <div class="how">
        <b>So geht ZWIP</b>
        <p>Jeden Tag gibt es eine Daily mit 10 Blitz-Challenges – für alle gleich. Schnell + richtig = mehr Punkte (max. 1000). Teile dein Ergebnis oder schick einen Duell-Link: Deine Freunde spielen exakt dieselbe Runde.</p>
-       <p class="muted">Kein Konto, keine Werbung, keine Lootboxen. Dein Fortschritt bleibt auf diesem Gerät.</p>
+       <p class="muted">Keine Werbung, keine Lootboxen.</p>
      </div>
      <button class="btn primary" id="set-save">Speichern</button>`,
     (el, close) => {
+      el.querySelector("#set-logout")!.addEventListener("click", async () => {
+        close();
+        await signOut();
+        toast("Du bist abgemeldet 👋");
+      });
       el.querySelector("#set-save")!.addEventListener("click", () => {
         const n = (el.querySelector("#set-name") as HTMLInputElement).value.trim();
         if (n) {
@@ -716,6 +727,8 @@ app.addEventListener("click", async (e) => {
   const btn = (e.target as HTMLElement).closest<HTMLElement>("[data-act]");
   if (!btn) return;
   const act = btn.dataset.act!;
+  // Spiel nur mit Anmeldung erreichbar
+  if (!currentUser()) return showStart();
   if (act !== "quit") sfx.tap();
   const t = today();
   switch (act) {
@@ -816,4 +829,31 @@ if (typeof __ZWIP_SINGLE__ !== "undefined" && !__ZWIP_SINGLE__ && "serviceWorker
   });
 }
 
-home();
+// ---------- Start: erst Anmeldung, dann Spiel ----------
+
+function showStart() {
+  aborted = true;
+  clearTimers();
+  document.querySelector(".modal-bg")?.remove();
+  renderStart(app, {
+    banner: pending ? `<b>${esc(pending.n)}</b> fordert dich heraus (${sumPoints(pending.r)} Punkte)` : undefined,
+    onSignedIn: (fresh) => {
+      home();
+      toast(fresh ? "Account erstellt – viel Spaß! 🎉" : "Angemeldet ✌️");
+    },
+  });
+}
+
+// Abgemeldet (Logout oder abgelaufene Sitzung) → zurück ins Startmenü
+onAuthChange((s) => {
+  if (!s) showStart();
+});
+
+async function boot() {
+  app.innerHTML = `<div class="screen boot" aria-busy="true"><h1 class="logo" aria-label="ZWIP"><span>Z</span><span>W</span><span>I</span><span>P</span></h1></div>`;
+  const s = await restoreSession();
+  if (s) home();
+  else showStart();
+}
+
+void boot();

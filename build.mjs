@@ -30,7 +30,27 @@ const config = {
   publicUrl: env.ZWIP_PUBLIC_URL || "",
 };
 
-const outdir = single ? "dist-single" : "dist";
+// Schutz: Geheime Supabase-Keys dürfen nie in die öffentliche App gelangen
+(function guardSecretKey(key) {
+  if (!key) return;
+  let role = "";
+  if (key.startsWith("eyJ")) {
+    try {
+      role = JSON.parse(Buffer.from(key.split(".")[1], "base64url").toString()).role || "";
+    } catch {
+      /* kein lesbares JWT */
+    }
+  }
+  if (key.startsWith("sb_secret_") || role === "service_role") {
+    console.error(
+      "\n✘ ZWIP_SUPABASE_ANON_KEY enthält einen GEHEIMEN Key (secret/service_role).\n" +
+        "  Der würde öffentlich im Browser landen. Nimm den 'publishable' bzw. 'anon public' Key.\n",
+    );
+    process.exit(1);
+  }
+})(config.supabaseAnonKey);
+
+const outdir = env.ZWIP_OUTDIR || (single ? "dist-single" : "dist");
 fs.rmSync(outdir, { recursive: true, force: true });
 fs.mkdirSync(outdir, { recursive: true });
 

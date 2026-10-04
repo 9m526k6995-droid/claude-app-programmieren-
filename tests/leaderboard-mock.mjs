@@ -10,7 +10,7 @@ const server = http.createServer((req, res) => {
   const url = new URL(req.url, "http://x");
   seen.push(`${req.method} ${url.pathname}`);
   assert.equal(req.headers.apikey, "test-anon-key");
-  assert.equal(req.headers.authorization, "Bearer test-anon-key");
+  assert.equal(req.headers.authorization, undefined, "publishable Key nie als Bearer");
   if (req.method === "POST") {
     let body = "";
     req.on("data", (c) => (body += c));

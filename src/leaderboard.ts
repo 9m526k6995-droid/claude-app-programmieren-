@@ -10,9 +10,12 @@ export interface BoardRow {
 }
 
 function headers(extra: Record<string, string> = {}): Record<string, string> {
+  // Neue "publishable" Keys (sb_publishable_…) gehören nur in den apikey-Header.
+  // Alte anon-Keys sind JWTs (eyJ…) und dürfen zusätzlich als Bearer mitgehen.
+  const isJwt = CONFIG.supabaseAnonKey.startsWith("eyJ");
   return {
     apikey: CONFIG.supabaseAnonKey,
-    Authorization: `Bearer ${CONFIG.supabaseAnonKey}`,
+    ...(isJwt ? { Authorization: `Bearer ${CONFIG.supabaseAnonKey}` } : {}),
     "Content-Type": "application/json",
     ...extra,
   };

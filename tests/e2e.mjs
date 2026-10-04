@@ -1,18 +1,102 @@
-// End-to-End-Test im echten Browser (Handy-Viewport). Spielt eine komplette Daily mit echten
-// Taps und Swipes, testet Duell-Link, Endlos-Modus, Bestenliste und Teilen.
-//   npm run build && npm run test:e2e
+// End-to-End-Test im echten Browser (Handy-Viewport). Testet Startmenü, Registrierung, Anmeldung,
+// Sitzung und Logout gegen einen nachgebauten Supabase-Auth-Server und spielt danach eine komplette
+// Daily mit echten Taps und Swipes, Duell-Link, Endlos-Modus, Bestenliste und Teilen.
+//   npm run test:e2e
 import { chromium, devices } from "playwright";
 import http from "node:http";
 import fs from "node:fs";
 import path from "node:path";
+import { spawnSync } from "node:child_process";
+import { randomUUID } from "node:crypto";
 
-const DIST = path.resolve(process.argv[2] || "dist");
+const DIST = path.resolve(".tmp/e2e-dist");
 const SHOTS = path.resolve(process.env.SHOTS || ".tmp/shots");
 fs.mkdirSync(SHOTS, { recursive: true });
 
+// ---------- Nachgebauter Supabase-Auth-Server (gleiches Antwortformat wie GoTrue) ----------
+const mock = { users: new Map(), refresh: new Map(), access: new Map(), confirmMode: false, refreshCalls: 0, apikeyMissing: 0 };
+function issue(user) {
+  const at = "at-" + randomUUID();
+  const rt = "rt-" + randomUUID();
+  mock.access.set(at, user);
+  mock.refresh.set(rt, user);
+  return { access_token: at, token_type: "bearer", expires_in: 3600, expires_at: Math.floor(Date.now() / 1000) + 3600, refresh_token: rt, user: { id: user.id, email: user.email } };
+}
+function json(res, status, body) {
+  res.writeHead(status, { "Content-Type": "application/json" });
+  res.end(body === undefined ? "" : JSON.stringify(body));
+}
+async function readBody(req) {
+  let b = "";
+  for await (const c of req) b += c;
+  return b ? JSON.parse(b) : {};
+}
+async function handleApi(req, res, url) {
+  if (url.pathname.startsWith("/__mock/")) {
+    if (url.pathname === "/__mock/confirm-mode") mock.confirmMode = url.searchParams.get("on") === "1";
+    if (url.pathname === "/__mock/revoke") mock.refresh.clear();
+    if (url.pathname === "/__mock/confirm-link") {
+      const u = mock.users.get(url.searchParams.get("email"));
+      u.confirmed = true;
+      const t = issue(u);
+      return json(res, 200, { hash: `#access_token=${t.access_token}&expires_in=3600&refresh_token=${t.refresh_token}&token_type=bearer&type=signup` });
+    }
+    return json(res, 200, { ok: true });
+  }
+  if (req.headers.apikey !== "test-anon-key") mock.apikeyMissing++;
+  const p = url.pathname;
+  if (p === "/auth/v1/signup" && req.method === "POST") {
+    const { email, password } = await readBody(req);
+    const exists = mock.users.get(email);
+    if (password.length < 6) return json(res, 422, { code: 422, error_code: "weak_password", msg: "Password should be at least 6 characters." });
+    if (mock.confirmMode) {
+      if (exists) return json(res, 200, { id: randomUUID(), email, identities: [] });
+      const u = { id: randomUUID(), email, password, confirmed: false };
+      mock.users.set(email, u);
+      return json(res, 200, { id: u.id, email, identities: [{ id: u.id }], confirmation_sent_at: new Date().toISOString() });
+    }
+    if (exists) return json(res, 422, { code: 422, error_code: "user_already_exists", msg: "User already registered" });
+    const u = { id: randomUUID(), email, password, confirmed: true };
+    mock.users.set(email, u);
+    return json(res, 200, issue(u));
+  }
+  if (p === "/auth/v1/token" && req.method === "POST") {
+    const body = await readBody(req);
+    if (url.searchParams.get("grant_type") === "password") {
+      const u = mock.users.get(body.email);
+      if (!u || u.password !== body.password) return json(res, 400, { code: 400, error_code: "invalid_credentials", msg: "Invalid login credentials" });
+      if (!u.confirmed) return json(res, 400, { code: 400, error_code: "email_not_confirmed", msg: "Email not confirmed" });
+      return json(res, 200, issue(u));
+    }
+    mock.refreshCalls++;
+    const u = mock.refresh.get(body.refresh_token);
+    if (!u) return json(res, 400, { code: 400, error_code: "refresh_token_not_found", msg: "Invalid Refresh Token: Refresh Token Not Found" });
+    mock.refresh.delete(body.refresh_token);
+    return json(res, 200, issue(u));
+  }
+  if (p === "/auth/v1/logout" && req.method === "POST") {
+    const u = mock.access.get((req.headers.authorization || "").replace("Bearer ", ""));
+    if (u) for (const [k, v] of mock.refresh) if (v === u) mock.refresh.delete(k);
+    res.writeHead(204).end();
+    return;
+  }
+  if (p === "/auth/v1/user") {
+    const u = mock.access.get((req.headers.authorization || "").replace("Bearer ", ""));
+    return u ? json(res, 200, { id: u.id, email: u.email }) : json(res, 401, { code: 401, msg: "invalid JWT" });
+  }
+  if (p.startsWith("/rest/v1/")) {
+    if (req.method === "HEAD") return res.writeHead(200, { "Content-Range": "0-0/0" }).end();
+    if (req.method === "POST") return res.writeHead(201).end();
+    return json(res, 200, []);
+  }
+  json(res, 404, { msg: "not found" });
+}
+
 const types = { ".html": "text/html", ".js": "text/javascript", ".css": "text/css", ".svg": "image/svg+xml", ".webmanifest": "application/manifest+json" };
 const server = http.createServer((req, res) => {
-  const p = decodeURIComponent(new URL(req.url, "http://x").pathname);
+  const url = new URL(req.url, "http://x");
+  if (/^\/(auth|rest)\/v1\/|^\/__mock\//.test(url.pathname)) return void handleApi(req, res, url).catch((e) => json(res, 500, { msg: String(e) }));
+  const p = decodeURIComponent(url.pathname);
   let f = path.join(DIST, p === "/" ? "index.html" : p);
   if (!fs.existsSync(f)) f = path.join(DIST, "index.html");
   res.writeHead(200, { "Content-Type": types[path.extname(f)] || "application/octet-stream" });
@@ -20,6 +104,17 @@ const server = http.createServer((req, res) => {
 });
 await new Promise((r) => server.listen(0, r));
 const BASE = `http://localhost:${server.address().port}/`;
+
+// App gegen den Mock-Server bauen
+const build = spawnSync(process.execPath, ["build.mjs"], {
+  stdio: "pipe",
+  env: { ...process.env, ZWIP_OUTDIR: DIST, ZWIP_SUPABASE_URL: BASE.slice(0, -1), ZWIP_SUPABASE_ANON_KEY: "test-anon-key", ZWIP_PUBLIC_URL: "" },
+});
+if (build.status !== 0) {
+  console.error(build.stderr.toString());
+  process.exit(1);
+}
+const mockCall = (p) => fetch(BASE + p.replace(/^\//, "")).then((r) => r.json());
 
 const browser = await chromium.launch();
 const errors = [];
@@ -42,6 +137,23 @@ async function newPage() {
     Object.defineProperty(navigator, "share", { value: undefined, configurable: true });
   });
   return { ctx, page };
+}
+
+async function openSettings(page) {
+  await page.click('[data-act="settings"]', { force: true });
+  await page.waitForSelector("#set-logout");
+}
+
+async function fillAuth(page, email, pw, pw2) {
+  await page.fill("#auth-email", email);
+  await page.fill("#auth-password", pw);
+  if (pw2 !== undefined) await page.fill("#auth-password2", pw2);
+  await page.click("#auth-submit", { force: true });
+}
+
+async function authError(page) {
+  await page.waitForSelector(".auth-error:not([hidden])", { timeout: 5000 });
+  return (await page.textContent(".auth-error")).trim();
 }
 
 async function center(page, handleFn) {
@@ -149,13 +261,37 @@ async function playTen(page, tag) {
 }
 
 try {
-  // 1) Start in unter 2 Sekunden spielbereit
+  // 1) Startmenü statt Spiel
   const A = await newPage();
   const t0 = Date.now();
   await A.page.goto(`${BASE}?e2e=1`);
-  await A.page.waitForSelector('[data-act="daily"]');
+  await A.page.waitForSelector('[data-auth="login"]');
   const ready = Date.now() - t0;
-  check(ready < 2000, `Startbildschirm spielbereit in ${ready} ms`);
+  check(ready < 2000, `Startmenü erscheint in ${ready} ms`);
+  check((await A.page.locator('[data-auth="register"]').count()) === 1, "Startmenü hat Anmelden + Registrieren");
+  check((await A.page.locator('[data-act="daily"]').count()) === 0, "Spiel ist ohne Anmeldung nicht erreichbar");
+  await A.page.screenshot({ path: `${SHOTS}/0-start.png` });
+
+  // 2) Registrierung mit Fehlerfällen
+  await A.page.click('[data-auth="register"]', { force: true });
+  await A.page.waitForSelector("#auth-password2");
+  await A.page.screenshot({ path: `${SHOTS}/0-register.png` });
+  await fillAuth(A.page, "lena-at-test", "geheim123", "geheim123");
+  check((await authError(A.page)).includes("gültige E-Mail"), "Ungültige E-Mail wird verständlich gemeldet");
+  await fillAuth(A.page, "lena@test.de", "geheim123", "geheim124");
+  check((await authError(A.page)).includes("stimmen nicht überein"), "Unterschiedliche Passwörter werden gemeldet");
+  await fillAuth(A.page, "lena@test.de", "kurz", "kurz");
+  check((await authError(A.page)).includes("mindestens 8"), "Zu kurzes Passwort wird gemeldet");
+  await A.page.screenshot({ path: `${SHOTS}/0-register-error.png` });
+  await fillAuth(A.page, "Lena@Test.de ", "geheim123", "geheim123");
+  await A.page.waitForSelector('[data-act="daily"]', { timeout: 5000 });
+  check(true, "Nach Registrierung direkt eingeloggt im Hauptmenü");
+  check(mock.users.has("lena@test.de"), "Account wurde beim Auth-Server angelegt (E-Mail normalisiert)");
+
+  // 3) Sitzung bleibt nach Neuladen erhalten
+  await A.page.reload();
+  await A.page.waitForSelector('[data-act="daily"]', { timeout: 5000 });
+  check(true, "Nach Neuladen weiterhin eingeloggt");
   await A.page.screenshot({ path: `${SHOTS}/1-home.png` });
 
   // 2) Komplette Daily spielen
@@ -204,11 +340,84 @@ try {
   check((await A.page.textContent(".streak-pill b")) === "1", "Home zeigt Streak 1");
   await A.page.screenshot({ path: `${SHOTS}/5-home-done.png` });
 
-  // 6) Freund:in öffnet den Duell-Link
+  // 5b) Logout → Startmenü, Fehlerfälle bei der Anmeldung, erneut anmelden
+  await openSettings(A.page);
+  check((await A.page.textContent(".account-mail")).trim() === "lena@test.de", "Einstellungen zeigen angemeldete E-Mail");
+  await A.page.screenshot({ path: `${SHOTS}/5b-settings.png` });
+  await A.page.click("#set-logout", { force: true });
+  await A.page.waitForSelector('[data-auth="login"]', { timeout: 5000 });
+  check((await A.page.locator('[data-act="daily"]').count()) === 0, "Nach Logout wieder Startmenü");
+  await A.page.reload();
+  await A.page.waitForSelector('[data-auth="login"]');
+  check(true, "Logout bleibt nach Neuladen bestehen");
+  await A.page.click('[data-auth="login"]', { force: true });
+  await fillAuth(A.page, "lena@test.de", "falsch999");
+  check((await authError(A.page)).includes("E-Mail oder Passwort ist falsch"), "Falsches Passwort wird verständlich gemeldet");
+  await A.page.screenshot({ path: `${SHOTS}/5c-login-error.png` });
+  await A.page.click('[data-auth="switch"]', { force: true });
+  await fillAuth(A.page, "lena@test.de", "anders123", "anders123");
+  check((await authError(A.page)).includes("schon einen Account"), "Bereits verwendete E-Mail wird gemeldet");
+  await A.page.click('[data-auth="switch"]', { force: true });
+  check((await A.page.inputValue("#auth-email")) === "lena@test.de", "E-Mail wird beim Wechsel zur Anmeldung übernommen");
+  await fillAuth(A.page, "lena@test.de", "geheim123");
+  await A.page.waitForSelector('[data-act="share-today"]', { timeout: 5000 });
+  check((await A.page.textContent(".streak-pill b")) === "1", "Nach erneutem Login: Daily-Ergebnis und Streak noch da");
+
+  // 5c) Abgelaufenes Token wird automatisch erneuert
+  const before = mock.refreshCalls;
+  await A.page.evaluate(() => {
+    const s = JSON.parse(localStorage.getItem("zwip:auth"));
+    s.expiresAt = Math.floor(Date.now() / 1000) - 10;
+    localStorage.setItem("zwip:auth", JSON.stringify(s));
+  });
+  await A.page.reload();
+  await A.page.waitForSelector('[data-act="share-today"]', { timeout: 5000 });
+  check(mock.refreshCalls === before + 1, "Abgelaufene Sitzung wird beim Laden still erneuert");
+
+  // 5d) Widerrufene Sitzung → zurück zum Startmenü
+  await mockCall("/__mock/revoke");
+  await A.page.evaluate(() => {
+    const s = JSON.parse(localStorage.getItem("zwip:auth"));
+    s.expiresAt = 0;
+    localStorage.setItem("zwip:auth", JSON.stringify(s));
+  });
+  await A.page.reload();
+  await A.page.waitForSelector('[data-auth="login"]', { timeout: 5000 });
+  check(true, "Ungültige Sitzung führt sauber zurück ins Startmenü");
+
+  // 5e) Projekt mit E-Mail-Bestätigung
+  await mockCall("/__mock/confirm-mode?on=1");
+  const D = await newPage();
+  await D.page.goto(`${BASE}?e2e=1`);
+  await D.page.click('[data-auth="register"]', { force: true });
+  await fillAuth(D.page, "max@test.de", "passwort1", "passwort1");
+  await D.page.waitForSelector('[data-auth="to-login"]', { timeout: 5000 });
+  check((await D.page.textContent(".auth-card")).includes("max@test.de"), "Hinweis „Bestätige deine E-Mail“ erscheint");
+  await D.page.screenshot({ path: `${SHOTS}/5e-confirm.png` });
+  await D.page.click('[data-auth="to-login"]', { force: true });
+  await fillAuth(D.page, "max@test.de", "passwort1");
+  check((await authError(D.page)).includes("bestätige zuerst"), "Login vor Bestätigung wird verständlich gemeldet");
+  const { hash } = await mockCall("/__mock/confirm-link?email=max@test.de");
+  await D.page.goto(`${BASE}?e2e=1&from=mail${hash}`); // neuer Seitenaufruf wie beim Klick in der Mail
+  await D.page.waitForSelector('[data-act="daily"]', { timeout: 5000 });
+  check(!(await D.page.evaluate(() => location.hash)), "Bestätigungslink loggt ein und Token verschwindet aus der Adresse");
+  await openSettings(D.page);
+  await D.page.click("#set-logout", { force: true });
+  await D.page.waitForSelector('[data-auth="register"]');
+  await D.page.click('[data-auth="register"]', { force: true });
+  await fillAuth(D.page, "max@test.de", "passwort2", "passwort2");
+  check((await authError(D.page)).includes("schon einen Account"), "Vergebene E-Mail wird auch mit Bestätigungs-Modus erkannt");
+  await mockCall("/__mock/confirm-mode?on=0");
+
+  // 6) Freund:in öffnet den Duell-Link, registriert sich und tritt an
   const B = await newPage();
   const duelUrl = link.replace(/^https?:\/\/[^/?]+\/?/, BASE) + "&e2e=1";
   await B.page.goto(duelUrl);
-  await B.page.waitForSelector(".duel-card");
+  await B.page.waitForSelector(".start .duel-card");
+  check((await B.page.textContent(".duel-card")).includes("Lena"), "Startmenü zeigt die Herausforderung");
+  await B.page.click('[data-auth="register"]', { force: true });
+  await fillAuth(B.page, "tom@test.de", "tomtom123", "tomtom123");
+  await B.page.waitForSelector('[data-act="duel"]', { timeout: 5000 });
   check((await B.page.textContent(".duel-card")).includes("Lena"), "Duell-Karte zeigt Herausforderer");
   await B.page.screenshot({ path: `${SHOTS}/6-duel-home.png` });
   await B.page.click('[data-act="duel"]', { force: true });
@@ -252,6 +461,7 @@ try {
   const aDaily = Object.values(st.daily)[0];
   check(aDaily.rounds.length === 10, "Daily hat 10 Runden");
 
+  check(mock.apikeyMissing === 0, "Jede Auth-Anfrage schickt den öffentlichen anon Key mit");
   check(errors.length === 0, `Keine JS-Fehler${errors.length ? ": " + errors.join(" | ") : ""}`);
 } catch (e) {
   console.error(e);
