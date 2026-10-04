@@ -63,6 +63,9 @@ const options = {
   target: ["es2020", "safari15", "chrome90"],
   format: "iife",
   outdir,
+  // Normaler Build: app-<hash>.js, damit Browser/CDN nie eine alte Version zeigen
+  entryNames: single || serve ? "[name]" : "[name]-[hash]",
+  metafile: true,
   write: !single,
   logLevel: "info",
   define: {
@@ -71,11 +74,11 @@ const options = {
   },
 };
 
-function writeHtml() {
+function writeHtml(js = "app.js", css = "app.css") {
   let html = fs.readFileSync("index.html", "utf8");
   html = html
-    .replace("<!--CSS-->", '<link rel="stylesheet" href="app.css" />')
-    .replace("<!--JS-->", '<script src="app.js"></script>');
+    .replace("<!--CSS-->", `<link rel="stylesheet" href="${css}" />`)
+    .replace("<!--JS-->", `<script src="${js}"></script>`);
   fs.writeFileSync(path.join(outdir, "index.html"), html);
   fs.cpSync("public", outdir, { recursive: true });
 }
@@ -104,8 +107,11 @@ if (single) {
   const { hosts } = await ctx.serve({ servedir: outdir, port, host: "0.0.0.0" });
   console.log(`\n  ZWIP läuft auf http://localhost:${port}  (Handy im selben WLAN: http://<deine-IP>:${port})\n`, hosts ?? "");
 } else {
-  await esbuild.build(options);
-  writeHtml();
-  const size = fs.statSync(path.join(outdir, "app.js")).size + fs.statSync(path.join(outdir, "app.css")).size;
+  const res = await esbuild.build(options);
+  const outs = Object.keys(res.metafile.outputs).map((f) => path.basename(f));
+  const js = outs.find((f) => f.endsWith(".js"));
+  const css = outs.find((f) => f.endsWith(".css"));
+  writeHtml(js, css);
+  const size = fs.statSync(path.join(outdir, js)).size + fs.statSync(path.join(outdir, css)).size;
   console.log(`✔ ${outdir}/ gebaut – JS+CSS ${(size / 1024).toFixed(1)} KB`);
 }

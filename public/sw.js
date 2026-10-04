@@ -1,6 +1,7 @@
 // Service Worker: Netzwerk zuerst, Cache als Offline-Fallback. So gibt es nie veraltete Versionen.
-const CACHE = "zwip-v1";
-const SHELL = ["./", "./index.html", "./app.js", "./app.css", "./icon.svg", "./manifest.webmanifest"];
+const CACHE = "zwip-v2";
+// app-<hash>.js/.css werden beim ersten Laden automatisch mitgespeichert
+const SHELL = ["./", "./index.html", "./icon.svg", "./manifest.webmanifest"];
 
 self.addEventListener("install", (e) => {
   e.waitUntil(caches.open(CACHE).then((c) => c.addAll(SHELL)).then(() => self.skipWaiting()));
