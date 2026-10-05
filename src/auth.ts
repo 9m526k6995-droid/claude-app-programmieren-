@@ -30,6 +30,7 @@ export type AuthErrorCode =
   | "rate_limited"
   | "wrong_password"
   | "same_password"
+  | "same_email"
   | "reauth_needed"
   | "network"
   | "unknown";
@@ -115,6 +116,7 @@ const MESSAGES: Record<AuthErrorCode, string> = {
   rate_limited: "Zu viele Versuche. Warte kurz und probier es dann nochmal.",
   wrong_password: "Dein aktuelles Passwort stimmt nicht.",
   same_password: "Das neue Passwort muss anders sein als das alte.",
+  same_email: "Das ist schon deine aktuelle E-Mail-Adresse.",
   reauth_needed: "Aus Sicherheitsgründen bitte einmal ab- und wieder anmelden, dann klappt das Ändern.",
   network: "Keine Verbindung zum Server. Prüfe dein Internet und versuch es nochmal.",
   unknown: "Da ist etwas schiefgelaufen. Bitte versuch es nochmal.",
@@ -134,7 +136,7 @@ function mapError(status: number, body: Record<string, unknown>): AuthErrorCode 
   const msg = String(body.msg ?? body.message ?? body.error_description ?? "").toLowerCase();
   if (status === 429 || code.includes("rate_limit") || msg.includes("rate limit")) return "rate_limited";
   if (code === "invalid_credentials" || code === "invalid_grant" || msg.includes("invalid login credentials")) return "invalid_credentials";
-  if (code === "user_already_exists" || code === "email_exists" || msg.includes("already registered")) return "email_taken";
+  if (code === "user_already_exists" || code === "email_exists" || msg.includes("already been registered") || msg.includes("already registered")) return "email_taken";
   if (code === "email_not_confirmed" || msg.includes("email not confirmed")) return "email_not_confirmed";
   if (code === "same_password" || msg.includes("should be different")) return "same_password";
   if (code === "reauthentication_needed" || code === "reauthentication_not_valid") return "reauth_needed";
@@ -235,6 +237,43 @@ export async function changePassword(current: string, next: string, confirm: str
   if (!fresh) fail("unknown");
   setSession(fresh);
   await call("/user", { password: next }, fresh.accessToken, "PUT");
+}
+
+/**
+ * E-Mail-Adresse ändern. Prüft zuerst das Passwort. Supabase schickt dann eine Bestätigungs-Mail;
+ * erst nach dem Klick auf den Link gilt die neue Adresse (`pending: true`).
+ * Ist die Bestätigung in Supabase ausgeschaltet, gilt sie sofort (`pending: false`).
+ */
+export async function changeEmail(newEmail: string, password: string): Promise<{ pending: boolean; email: string }> {
+  const s = session;
+  if (!s) fail("invalid_credentials");
+  const email = newEmail.trim().toLowerCase();
+  if (!validateEmail(email)) fail("invalid_email");
+  if (email === s.user.email.toLowerCase()) fail("same_email");
+  if (!password) fail("wrong_password");
+  let fresh: Session | null;
+  try {
+    fresh = toSession(await call("/token?grant_type=password", { email: s.user.email, password }));
+  } catch (e) {
+    if (e instanceof AuthError && e.code === "invalid_credentials") fail("wrong_password");
+    throw e;
+  }
+  if (!fresh) fail("unknown");
+  setSession(fresh);
+  const redirect = location.protocol.startsWith("http") ? `?redirect_to=${encodeURIComponent(location.origin + location.pathname)}` : "";
+  let user: Record<string, unknown>;
+  try {
+    user = await call(`/user${redirect}`, { email }, fresh.accessToken, "PUT");
+  } catch (e) {
+    if (e instanceof AuthError && e.code === "email_taken") throw new AuthError("email_taken", "Mit dieser E-Mail gibt es schon einen anderen Account.");
+    throw e;
+  }
+  const now = String(user.email ?? "").toLowerCase();
+  if (now === email) {
+    setSession({ ...fresh, user: { ...fresh.user, email } });
+    return { pending: false, email };
+  }
+  return { pending: true, email };
 }
 
 let refreshing: Promise<Session | null> | null = null;

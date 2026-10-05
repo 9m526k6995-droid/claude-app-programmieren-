@@ -134,7 +134,16 @@ async function handleApi(req, res, url) {
   if (p === "/auth/v1/user" && req.method === "PUT") {
     const u = mock.access.get((req.headers.authorization || "").replace("Bearer ", ""));
     if (!u) return json(res, 401, { code: 401, msg: "invalid JWT" });
-    const { password } = await readBody(req);
+    const { password, email } = await readBody(req);
+    if (email) {
+      if (mock.users.has(email)) return json(res, 422, { code: 422, error_code: "email_exists", msg: "A user with this email address has already been registered" });
+      mock.emailChanges = (mock.emailChanges || []).concat(email);
+      if (mock.confirmMode) return json(res, 200, { id: u.id, email: u.email, new_email: email });
+      mock.users.delete(u.email);
+      u.email = email;
+      mock.users.set(email, u);
+      return json(res, 200, { id: u.id, email });
+    }
     if (password === u.password) return json(res, 422, { code: 422, error_code: "same_password", msg: "New password should be different from the old password." });
     u.password = password;
     mock.passwordChanges = (mock.passwordChanges || 0) + 1;
@@ -865,14 +874,55 @@ try {
   check((await tP.locator(".top-avatar img").count()) === 1, "Profilbild auch oben im Hauptmenü");
   await tP.screenshot({ path: `${SHOTS}/p4-home-avatar.png` });
 
+  // E-Mail ändern: mit Bestätigungs-Mail (Standard bei Supabase)
+  await tP.click('[data-act="profile"]', { force: true });
+  await tP.waitForSelector('[data-pf="email"]');
+  check((await tP.textContent('[data-pf="email"]')).includes("lena@test.de"), "Profil zeigt aktuelle E-Mail");
+  await tP.click('[data-pf="email"]', { force: true });
+  await tP.waitForSelector("#em-new");
+  await tP.fill("#em-new", "kaputt");
+  await tP.fill("#em-pw", "neuesPasswort1");
+  await tP.click("#em-save", { force: true });
+  await tP.waitForSelector(".pf-pw .auth-error:not([hidden])");
+  check((await tP.textContent(".pf-pw .auth-error")).includes("gültige E-Mail"), "E-Mail ändern: ungültige Adresse wird erkannt");
+  await tP.fill("#em-new", "max@test.de");
+  await tP.click("#em-save", { force: true });
+  await tP.waitForFunction(() => document.querySelector(".pf-pw .auth-error")?.textContent.includes("anderen Account"), null, { timeout: 5000 });
+  check(true, "E-Mail ändern: vergebene Adresse wird erkannt");
+  await tP.fill("#em-new", "lena.neu@test.de");
+  await tP.fill("#em-pw", "falsch999");
+  await tP.click("#em-save", { force: true });
+  await tP.waitForFunction(() => document.querySelector(".pf-pw .auth-error")?.textContent.includes("aktuelles Passwort"), null, { timeout: 5000 });
+  check(true, "E-Mail ändern: falsches Passwort wird erkannt");
+  await mockCall("/__mock/confirm-mode?on=1");
+  await tP.fill("#em-pw", "neuesPasswort1");
+  await tP.click("#em-save", { force: true });
+  await tP.waitForFunction(() => document.querySelector(".pf-pw")?.textContent.includes("Fast geschafft"), null, { timeout: 5000 });
+  check((await tP.textContent(".pf-pw")).includes("lena.neu@test.de"), "E-Mail ändern: Hinweis auf Bestätigungs-Mail");
+  await tP.screenshot({ path: `${SHOTS}/p6-email-pending.png` });
+  await tP.click(".pf-pw [data-close]", { force: true });
+  await mockCall("/__mock/confirm-mode?on=0");
+  // Ohne Bestätigung (sofort gültig)
+  await tP.click('[data-pf="email"]', { force: true });
+  await tP.waitForSelector("#em-new");
+  await tP.fill("#em-new", "lena2@test.de");
+  await tP.fill("#em-pw", "neuesPasswort1");
+  await tP.click("#em-save", { force: true });
+  await tP.waitForFunction(() => document.querySelector(".toast")?.textContent.includes("E-Mail geändert"), null, { timeout: 5000 });
+  await tP.waitForFunction(() => document.querySelector('[data-pf="email"]')?.textContent.includes("lena2@test.de"), null, { timeout: 5000 });
+  check(mock.users.has("lena2@test.de"), "E-Mail beim Auth-Server geändert und im Profil angezeigt");
+  await tP.click(".modal [data-close]", { force: true });
+  await tP.waitForSelector(".modal", { state: "detached" });
+  psql("update auth.users set email = 'lena2@test.de' where email = 'lena@test.de'");
+
   // Mit neuem Passwort anmelden
   await openSettings(tP);
   await tP.click("#set-logout", { force: true });
   await tP.waitForSelector('[data-auth="login"]', { timeout: 5000 });
   await tP.click('[data-auth="login"]', { force: true });
-  await fillAuth(tP, "lena@test.de", "geheim123");
+  await fillAuth(tP, "lena2@test.de", "geheim123");
   check((await authError(tP)).includes("falsch"), "Altes Passwort funktioniert nicht mehr");
-  await fillAuth(tP, "lena@test.de", "neuesPasswort1");
+  await fillAuth(tP, "lena2@test.de", "neuesPasswort1");
   await tP.waitForSelector('[data-act="profile"]', { timeout: 5000 });
   check(true, "Anmeldung mit neuem Passwort");
 

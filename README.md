@@ -48,7 +48,7 @@ Oben rechts im Hauptmenü sitzt das eigene Profilbild. Ein Tipp darauf öffnet d
 - **Profilbild** aus der eigenen Foto-Mediathek (oder Kamera). Die App schneidet es quadratisch zu und verkleinert es auf ein kleines JPEG (meist unter 30 KB).
 - **Statistiken**: Trophäen, Weltrang, Höchststand, beste Serie, „Dabei seit“.
 - **Profil-Link** (z. B. `https://zwip.app/?p=Lena`) zum Senden über WhatsApp & Co. oder zum Kopieren. Wer den Link öffnet, sieht nach der Anmeldung das Profil und kann direkt eine Freundschaftsanfrage schicken.
-- **Konto**: Spielername ändern, **Passwort ändern** (mit Abfrage des aktuellen Passworts), Abmelden.
+- **Konto**: Spielername ändern, **E-Mail ändern** (mit Bestätigungs-Link an die neue Adresse), **Passwort ändern** (beides mit Abfrage des Passworts), Abmelden.
 - Profile anderer Spieler (aus Rangliste und Freundesliste) zeigen ebenfalls Profilbild und einen Teilen-Knopf. Die E-Mail-Adresse ist nie öffentlich.
 
 ### Spielmodi

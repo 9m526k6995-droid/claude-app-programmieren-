@@ -1,7 +1,7 @@
 // Profil-Popups: das eigene Profil (Bild, Link, Konto) und fremde Profile (per Direktlink oder aus Listen).
 
 import { esc, modal, toast } from "./ui";
-import { changePassword, AuthError, MIN_PASSWORD } from "./auth";
+import { changePassword, changeEmail, currentUser, AuthError, MIN_PASSWORD } from "./auth";
 import { formatTrophies, leagueById } from "./trophies";
 import { leagueBadge } from "./trophyUi";
 import {
@@ -102,7 +102,7 @@ export function openMyProfile(h: MyProfileHandlers) {
             ${p.avatar ? `<button class="pf-row" type="button" data-pf="remove"><span aria-hidden="true">🗑️</span><b>Profilbild entfernen</b><i aria-hidden="true">›</i></button>` : ""}
             <button class="pf-row" type="button" data-pf="rename"><span aria-hidden="true">✏️</span><b>Spielername ${named ? "ändern" : "wählen"}</b><i aria-hidden="true">›</i></button>
             <button class="pf-row" type="button" data-pf="password"><span aria-hidden="true">🔒</span><b>Passwort ändern</b><i aria-hidden="true">›</i></button>
-            <div class="pf-row static"><span aria-hidden="true">✉️</span><b>E-Mail</b><em class="account-mail">${esc(h.email)}</em></div>
+            <button class="pf-row" type="button" data-pf="email"><span aria-hidden="true">✉️</span><b>E-Mail ändern</b><em class="account-mail">${esc(currentUser()?.email || h.email)}</em><i aria-hidden="true">›</i></button>
           </div>
         </section>
         <div class="actions-row">
@@ -166,7 +166,10 @@ export function openMyProfile(h: MyProfileHandlers) {
           h.onRename(() => openMyProfile({ ...h, initial: card }));
         }),
       );
-      root.querySelector('[data-pf="password"]')!.addEventListener("click", () => openChangePassword(h.email));
+      root.querySelector('[data-pf="password"]')!.addEventListener("click", () => openChangePassword(currentUser()?.email || h.email));
+      root.querySelector('[data-pf="email"]')!.addEventListener("click", () =>
+        openChangeEmail(currentUser()?.email || h.email, () => render()),
+      );
       root.querySelector('[data-pf="logout"]')!.addEventListener("click", () => {
         close();
         h.onSignOut();
@@ -243,6 +246,62 @@ export function openChangePassword(email: string) {
         }
       });
       cur.focus();
+    },
+  );
+}
+
+// =====================================================================
+// E-Mail ändern
+// =====================================================================
+
+export function openChangeEmail(current: string, onChanged: () => void) {
+  modal(
+    `<form class="pf-pw" novalidate>
+       <h3>E-Mail ändern</h3>
+       <p class="muted modal-text">Aktuell: <b>${esc(current)}</b></p>
+       <input type="email" name="username" autocomplete="username" value="${esc(current)}" class="visually-hidden" tabindex="-1" aria-hidden="true" readonly>
+       <label class="lbl" for="em-new">Neue E-Mail-Adresse</label>
+       <input id="em-new" type="email" inputmode="email" autocomplete="email" autocapitalize="off" spellcheck="false" required enterkeyhint="next">
+       <label class="lbl" for="em-pw">Dein Passwort</label>
+       <input id="em-pw" type="password" autocomplete="current-password" required enterkeyhint="go">
+       <p class="hint muted">Zur Sicherheit fragen wir dein Passwort ab.</p>
+       <div class="auth-error" role="alert" aria-live="assertive" hidden></div>
+       <button class="btn primary" type="submit" id="em-save">E-Mail ändern</button>
+       <button class="btn ghost" type="button" data-close>Abbrechen</button>
+     </form>`,
+    (el, close) => {
+      const form = el.querySelector<HTMLFormElement>("form")!;
+      const err = el.querySelector<HTMLElement>(".auth-error")!;
+      const btn = el.querySelector<HTMLButtonElement>("#em-save")!;
+      const mail = el.querySelector<HTMLInputElement>("#em-new")!;
+      const pw = el.querySelector<HTMLInputElement>("#em-pw")!;
+      form.addEventListener("submit", async (e) => {
+        e.preventDefault();
+        err.hidden = true;
+        btn.disabled = true;
+        btn.textContent = "Wird geändert…";
+        try {
+          const r = await changeEmail(mail.value, pw.value);
+          if (!r.pending) {
+            close();
+            toast("E-Mail geändert ✉️");
+            onChanged();
+            return;
+          }
+          form.innerHTML = `
+            <div class="pm-head"><div class="big-emoji" aria-hidden="true">📬</div><h3>Fast geschafft!</h3></div>
+            <p class="modal-text">Wir haben dir einen Bestätigungs-Link an <b>${esc(r.email)}</b> geschickt. Schau auch im Spam-Ordner nach.</p>
+            <p class="muted modal-text">Erst nach dem Klick auf den Link gilt die neue Adresse. Je nach Einstellung kommt auch an deine alte Adresse eine Mail, die du bestätigen musst. Bis dahin meldest du dich weiter mit <b>${esc(current)}</b> an.</p>
+            <button class="btn primary" type="button" data-close>Alles klar</button>`;
+        } catch (x) {
+          err.textContent = x instanceof AuthError ? x.message : "Da ist etwas schiefgelaufen.";
+          err.hidden = false;
+          btn.disabled = false;
+          btn.textContent = "E-Mail ändern";
+          (x instanceof AuthError && x.code === "wrong_password" ? pw : mail).focus();
+        }
+      });
+      mail.focus();
     },
   );
 }
