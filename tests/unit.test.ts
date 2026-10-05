@@ -1,7 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { makeRng, dayIndex, daySeed, dateOfDay } from "../src/rng";
-import { buildRounds, endlessRound, roundPoints, tileOf, GAME_IDS, CLASSIC_IDS, WAVE2_IDS, ROUNDS, idsForDay, NEW_GAMES_FROM_DAY, WAVE3_FROM_DAY } from "../src/run";
+import { buildRounds, endlessRound, roundPoints, tileOf, GAME_IDS, CLASSIC_IDS, WAVE2_IDS, ROUNDS, idsForDay, NEW_GAMES_FROM_DAY, WAVE3_FROM_DAY, WAVE3_IDS, WAVE4_FROM_DAY } from "../src/run";
 import { freshState, recordDaily, currentStreak, addCrewResult } from "../src/state";
 import { profileLink, avatarHtml, memberSince } from "../src/profileKit";
 import { routeParts, tabFor } from "../src/nav";
@@ -116,9 +116,9 @@ test("Crew: Ergebnisse von Freunden werden pro Tag gespeichert", () => {
   assert.equal(s.crew.f1.days[4].score, 700);
 });
 
-test("Mit allen 22 Challenges: 10 verschiedene pro Runde, alle kommen vor", () => {
-  assert.equal(GAME_IDS.length, 22);
-  assert.equal(GAMES.length, 22);
+test("Mit allen 27 Challenges: 10 verschiedene pro Runde, alle kommen vor", () => {
+  assert.equal(GAME_IDS.length, 27);
+  assert.equal(GAMES.length, 27);
   assert.deepEqual(GAMES.map((g) => g.id).sort(), [...GAME_IDS].sort(), "Registry und Spiel-IDs passen zusammen");
   const seen = new Set<string>();
   for (let s = 0; s < 300; s++) {
@@ -127,7 +127,7 @@ test("Mit allen 22 Challenges: 10 verschiedene pro Runde, alle kommen vor", () =
     r.forEach((x) => seen.add(x.gameId));
   }
   assert.equal(seen.size, GAME_IDS.length);
-  // Trophäen-Modus: 15 Aufgaben aus 22 → kein Spiel doppelt
+  // Trophäen-Modus: 15 Aufgaben aus 27 → kein Spiel doppelt
   for (let s = 0; s < 200; s++) {
     const r = buildRounds(s * 7919 + 1, 15, GAME_IDS);
     assert.equal(new Set(r.map((x) => x.gameId)).size, 15);
@@ -137,7 +137,9 @@ test("Mit allen 22 Challenges: 10 verschiedene pro Runde, alle kommen vor", () =
 test("Neue Challenges erst ab ihrer Daily – alte Dailies und Duelle bleiben identisch", () => {
   assert.deepEqual(idsForDay(4), CLASSIC_IDS);
   assert.deepEqual(idsForDay(NEW_GAMES_FROM_DAY), WAVE2_IDS);
-  assert.deepEqual(idsForDay(WAVE3_FROM_DAY), GAME_IDS);
+  assert.deepEqual(idsForDay(WAVE3_FROM_DAY), WAVE3_IDS);
+  assert.equal(WAVE3_IDS.length, 22);
+  assert.deepEqual(idsForDay(WAVE4_FROM_DAY), GAME_IDS);
   // Daily #4 muss exakt so aussehen wie vor dem Update (damals Standard = 8 Klassiker)
   const before4 = buildRounds(daySeed(4), ROUNDS, ["odd", "stop", "wait", "more", "pop", "sum", "ink", "swipe"]);
   assert.deepEqual(buildRounds(daySeed(4), ROUNDS, idsForDay(4)), before4);
@@ -150,6 +152,12 @@ test("Neue Challenges erst ab ihrer Daily – alte Dailies und Duelle bleiben id
   let seenNew = 0;
   for (let d = WAVE3_FROM_DAY; d < WAVE3_FROM_DAY + 30; d++) seenNew += buildRounds(daySeed(d), ROUNDS, idsForDay(d)).filter((r) => wave3.includes(r.gameId)).length;
   assert.ok(seenNew > 60, `neue Spiele kommen in den Dailies vor (${seenNew})`);
+  // Daily #6 bleibt bei den 22 Spielen, ab Daily #7 kommen die 5 der vierten Welle dazu
+  const wave4 = ["blocks", "dodge", "stack", "slice", "ampel"];
+  assert.ok(!buildRounds(daySeed(6), ROUNDS, idsForDay(6)).some((r) => wave4.includes(r.gameId)));
+  let seen4 = 0;
+  for (let d = WAVE4_FROM_DAY; d < WAVE4_FROM_DAY + 30; d++) seen4 += buildRounds(daySeed(d), ROUNDS, idsForDay(d)).filter((r) => wave4.includes(r.gameId)).length;
+  assert.ok(seen4 > 30, `Spiele der 4. Welle kommen in den Dailies vor (${seen4})`);
 });
 
 // ---------- Trophäen ----------

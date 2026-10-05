@@ -1,6 +1,6 @@
 # ⚡ ZWIP
 
-**10 Blitz-Challenges. Jeden Tag neu. Für alle gleich. Plus 22 Minigames mit eigenen Ranglisten.**
+**10 Blitz-Challenges. Jeden Tag neu. Für alle gleich. Plus 27 Minigames mit eigenen Ranglisten.**
 
 ZWIP ist ein Mobile-first Web-Game für Jugendliche und junge Erwachsene. Kostenlos anmelden, einmal tippen, spielen. Keine Installation, keine Werbung, keine Lootboxen.
 
@@ -32,8 +32,13 @@ Eine Runde besteht aus 10 Mini-Challenges, die jeweils nur ein paar Sekunden dau
 | 🕵️ | Was ist neu? | Welches Emoji ist neu dazugekommen? |
 | 🥤 | Hütchenspiel | Den Becher mit dem Ball finden |
 | 👯 | Das Paar | Die zwei gleichen Emojis finden |
+| 🧩 | Block-Lücke | Welcher Block füllt die Lücke? (wie Block Blast) |
+| 🏃 | Ausweichen | Auf eine freie Spur tippen (wie Subway Surfers) |
+| 🏗️ | Stapelturm | Block genau auf den Turm fallen lassen (wie Stack) |
+| 🍉 | Schnippeln | Früchte durchwischen, keine Bombe (wie Fruit Ninja) |
+| 🚦 | Rotes Licht | Halten zum Laufen, bei Rot sofort loslassen |
 
-Find, Memory, Takt und Muster sind ab Daily #5 dabei, die zehn Spiele der dritten Welle ab Daily #6 (im Training, Endlos- und Trophäen-Modus sofort). Ältere Dailies und Duelle darauf bleiben exakt gleich. Jede Runde zieht 10 verschiedene Challenges.
+Find, Memory, Takt und Muster sind ab Daily #5 dabei, die zehn Spiele der dritten Welle ab Daily #6, die fünf der vierten Welle (Block-Lücke, Ausweichen, Stapelturm, Schnippeln, Rotes Licht) ab Daily #7 (im Training, Endlos- und Trophäen-Modus sofort). Ältere Dailies und Duelle darauf bleiben exakt gleich. Jede Runde zieht 10 verschiedene Challenges.
 
 Schnell und richtig gibt bis zu 100 Punkte pro Challenge, maximal 1000. Die Schwierigkeit steigt innerhalb der Runde.
 
@@ -55,7 +60,7 @@ Oben rechts auf jeder Seite öffnet die **Flamme** den Trophäenpfad (`#/pfad`).
 
 ### Minigames – jedes Spiel einzeln
 
-Unter **Spielen → Minigames** gibt es alle 22 Spiele einzeln. Jedes hat eine Detailseite (Erklärung, „So wird's schwerer“, Bestleistung, Rang, Rangliste) und eine **eigene Rangliste**.
+Unter **Spielen → Minigames** gibt es alle 27 Spiele einzeln. Jedes hat eine Detailseite (Erklärung, „So wird's schwerer“, Bestleistung, Rang, Rangliste) und eine **eigene Rangliste**.
 
 - Ein Lauf geht Stufe für Stufe. Jede Stufe wird schwerer. Ein Fehler oder Zeit um = Lauf vorbei.
 - Kein langes Erklären: nur eine kurze Startkarte „3 · 2 · 1“.
@@ -86,6 +91,11 @@ Unter **Spielen → Minigames** gibt es alle 22 Spiele einzeln. Jedes hat eine D
 | 🕵️ Was ist neu? | 4 → 14 Emojis, sichtbar 2,0 → 0,7 s, ab Stufe 6 sehr ähnliche Emojis, ab 10 wechseln alle den Platz |
 | 🥤 Hütchenspiel | 3 → 20 Vertauschungen, immer schneller, ab Stufe 10 vier Becher |
 | 👯 Das Paar | 8 → 36 Emojis, ab Stufe 6 sehr ähnliche Emojis, Zeit 4,6 → 3 s |
+| 🧩 Block-Lücke | Lücken 3 → 5 Felder, ab Stufe 5 vier Blöcke, ab 6 gedrehte/gespiegelte Fallen, Zeit 4,2 → 1,8 s |
+| 🏃 Ausweichen | 5 → 16 Hindernisse, immer schneller und dichter, ab Stufe 3 oft zwei Spuren gesperrt, ab 10 vier Spuren |
+| 🏗️ Stapelturm | 3 → 12 Blöcke, Tempo 70 → 190 %/s, Startblock 60 % → 30 % breit |
+| 🍉 Schnippeln | 3 → 12 Früchte, Flugzeit 2,0 → 1,1 s, ab Stufe 3 Bomben (12 → 40 %) |
+| 🚦 Rotes Licht | Weg 2,2 → 4,2 s, Loslass-Zeit 0,45 → 0,18 s, Grünphasen immer kürzer |
 
 Alle Werte stehen in `src/games.ts` (`stage(n)` pro Spiel) und werden in den Tests für die Stufen 1–60 geprüft: Es wird nie leichter, und es gibt feste Grenzen, damit es nie unmöglich wird.
 
@@ -96,7 +106,7 @@ Beim Öffnen erscheint ein Startmenü mit **Anmelden** und **Registrieren** (E-M
 ### Trophäen, Weltrangliste und Freunde
 
 - **Flamme oben rechts** zeigt den Trophäenstand (z. B. 🔥 2.460) und öffnet den **Trophäenpfad**: ein geschwungener Pfad von 0 bis 20.000 mit Meilensteinen und 8 Ligen (Anfänger, Bronze, Silber, Gold, Platin, Diamant, Meister, Legende).
-- **Trophäen-Modus**: 15 verschiedene Aufgaben aus allen 22 Minispielen. Richtig +6, schnell +1, sehr schnell +2, falsch oder Zeit um −10, Serienbonus +5/+10/+15 bei 5/10/15 richtigen am Stück. Schwierigkeit steigt mit dem Trophäenstand (Meister/Legende: sehr schwer).
+- **Trophäen-Modus**: 15 verschiedene Aufgaben aus allen 27 Minispielen. Richtig +6, schnell +1, sehr schnell +2, falsch oder Zeit um −10, Serienbonus +5/+10/+15 bei 5/10/15 richtigen am Stück. Schwierigkeit steigt mit dem Trophäenstand (Meister/Legende: sehr schwer).
 - **Liga-Einsatz**: Am Ende jeder Runde wird je nach Liga (bei Rundenbeginn) etwas abgezogen. Dadurch kann man Trophäen verlieren und auch absteigen (nie unter 0). Die beiden obersten Ligen sind ultra schwer, aber machbar:
 
   | Liga | Einsatz | perfekt (15/15, sehr schnell) | gut (12/15) | schwach (9/15) |
@@ -208,7 +218,7 @@ supabase/profiles.sql Benutzerprofile (Grundlage für Highscores, Fortschritt us
 supabase/trophies.sql Trophäen, Weltrangliste, Freunde (Funktionen + Sicherheitsregeln)
 supabase/profile.sql  Profilbild und öffentliches Profil (Profil-Links)
 supabase/minigames.sql Minigame-Läufe und Ranglisten pro Spiel
-src/games.ts / games2.ts  Die 22 Minispiele (games2.ts = dritte Welle), gameKit.ts = gemeinsame Bausteine
+src/games.ts / games2.ts / games3.ts  Die 27 Minispiele (games2 = dritte, games3 = vierte Welle), gameKit.ts = gemeinsame Bausteine
 supabase/schema.sql   Alte Tages-Punkteliste (wird nicht mehr genutzt)
 tests/                Logik-, Bestenlisten- und Browser-Tests
 ```

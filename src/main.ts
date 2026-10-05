@@ -12,7 +12,7 @@ import {
   type DayResult,
 } from "./state";
 import { createSfx } from "./sound";
-import { GAME_BY_ID, EXPLAIN_MS, type Outcome, type MicroGame } from "./games";
+import { GAMES, GAME_BY_ID, EXPLAIN_MS, type Outcome, type MicroGame } from "./games";
 import { buildRounds, endlessRound, roundPoints, tileOf, verdict, ROUNDS, idsForDay, GAME_IDS, type Mode, type RoundSpec } from "./run";
 import {
   encodeChallenge,
@@ -396,7 +396,7 @@ function playMenuScreen() {
     <div class="mode-list">
       ${modeCard({ act: "daily", icon: "⚡", title: `Daily #${t}`, desc: played ? "Heute schon gespielt – morgen gibt's eine neue." : "10 Challenges – für alle gleich, jeden Tag neu.", meta: played ? `<b>${played.score}</b>` : `<em class="tag">Neu</em>`, cls: "c-daily" })}
       ${modeCard({ act: "tmode", icon: "🏆", title: "Trophäen-Modus", desc: "15 Aufgaben – sammle Trophäen und steig in den Ligen auf.", meta: `<b>🔥 ${myTrophyLabel()}</b>`, cls: "c-trophy" })}
-      ${modeCard({ href: "#/minigames", icon: "🎮", title: "Minigames", desc: "Jedes Spiel einzeln – Stufe für Stufe schwerer.", meta: `<em class="tag lime">22 Spiele</em>`, cls: "c-mini" })}
+      ${modeCard({ href: "#/minigames", icon: "🎮", title: "Minigames", desc: "Jedes Spiel einzeln – Stufe für Stufe schwerer.", meta: `<em class="tag lime">${GAMES.length} Spiele</em>`, cls: "c-mini" })}
       ${modeCard({ act: "free", icon: "🏋️", title: "Training", desc: "10 zufällige Challenges – so oft du willst.", meta: S.best.free ? `Best <b>${S.best.free}</b>` : "" })}
       ${modeCard({ act: "endless", icon: "♾️", title: "Endlos", desc: "Bis zum ersten Fehler.", meta: S.best.endless ? `Best <b>${S.best.endless}</b>` : "" })}
     </div>`,

@@ -10,14 +10,18 @@ export const CLASSIC_IDS = ["odd", "stop", "wait", "more", "pop", "sum", "ink", 
 /** Die 12 Challenges der zweiten Welle (Daily #5). */
 export const WAVE2_IDS = [...CLASSIC_IDS, "find", "memory", "beat", "pattern"] as const;
 /** Alle Challenges. Neue einfach hinten anhängen und eine neue Welle mit Start-Daily festlegen. */
-export const GAME_IDS = [...WAVE2_IDS, "count", "mole", "spell", "clock", "big", "shape", "order", "newone", "cups", "pair"] as const;
+/** Die 22 Challenges der dritten Welle (Daily #6). */
+export const WAVE3_IDS = [...WAVE2_IDS, "count", "mole", "spell", "clock", "big", "shape", "order", "newone", "cups", "pair"] as const;
+export const GAME_IDS = [...WAVE3_IDS, "blocks", "dodge", "stack", "slice", "ampel"] as const;
 /** Ab dieser Daily sind die Challenges der 2. Welle dabei. */
 export const NEW_GAMES_FROM_DAY = 5;
-/** Ab dieser Daily sind alle 22 Challenges dabei – ältere Dailies (und Duelle darauf) bleiben exakt gleich. */
+/** Ab dieser Daily sind die 22 Challenges der 3. Welle dabei – ältere Dailies (und Duelle darauf) bleiben exakt gleich. */
 export const WAVE3_FROM_DAY = 6;
+/** Ab dieser Daily sind alle 27 Challenges dabei (Block-Lücke, Ausweichen, Stapelturm, Schnippeln, Rotes Licht). */
+export const WAVE4_FROM_DAY = 7;
 
 export function idsForDay(day: number): readonly string[] {
-  return day < NEW_GAMES_FROM_DAY ? CLASSIC_IDS : day < WAVE3_FROM_DAY ? WAVE2_IDS : GAME_IDS;
+  return day < NEW_GAMES_FROM_DAY ? CLASSIC_IDS : day < WAVE3_FROM_DAY ? WAVE2_IDS : day < WAVE4_FROM_DAY ? WAVE3_IDS : GAME_IDS;
 }
 
 export interface RoundSpec {

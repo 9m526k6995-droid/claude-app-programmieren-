@@ -74,6 +74,7 @@ export interface MicroGame {
 
 import { lerp, st, h, onPress, scatter } from "./gameKit";
 import { GAMES_WAVE3 } from "./games2";
+import { GAMES_WAVE4 } from "./games3";
 
 export const PALETTE = ["#ff3d8b", "#3d7bff", "#2fd17a", "#ffd23d", "#ff8a3d", "#a45cff", "#25d9e8"];
 
@@ -1278,5 +1279,5 @@ const pattern: MicroGame = {
   },
 };
 
-export const GAMES: MicroGame[] = [odd, stop, wait, more, pop, sum, ink, swipe, find, memory, beat, pattern, ...GAMES_WAVE3];
+export const GAMES: MicroGame[] = [odd, stop, wait, more, pop, sum, ink, swipe, find, memory, beat, pattern, ...GAMES_WAVE3, ...GAMES_WAVE4];
 export const GAME_BY_ID: Record<string, MicroGame> = Object.fromEntries(GAMES.map((g) => [g.id, g]));

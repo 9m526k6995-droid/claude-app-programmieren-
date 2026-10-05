@@ -85,6 +85,12 @@ as $$
     when 'newone' then 1500
     when 'cups'   then 1500
     when 'pair'   then 400
+    -- Vierte Welle
+    when 'blocks' then 400
+    when 'dodge'  then 1500
+    when 'stack'  then 900
+    when 'slice'  then 1500
+    when 'ampel'  then 2000
     else null
   end
 $$;

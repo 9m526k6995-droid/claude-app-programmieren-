@@ -256,13 +256,16 @@ async function stageCenter(page) {
 }
 
 /** Löst die aktuelle Runde wie ein echter Mensch (Klick/Swipe). fail=true: absichtlich falsch. */
+const solvedLog = [];
 async function solveRound(page, lastN, fail = false) {
   await page.waitForFunction((n) => window.__zwip.round && window.__zwip.round.n > n, lastN, { timeout: 15000 }).catch(async (e) => {
     await page.screenshot({ path: `${SHOTS}/zz-timeout.png` });
+    console.log("Zuletzt gelöst:", solvedLog.slice(-16).join(" "));
     console.log("Hängt bei:", await page.evaluate(() => document.querySelector(".stage, .intro")?.className + " | " + document.querySelector(".t-task, .hud")?.textContent));
     throw e;
   });
   const r = await page.evaluate(() => ({ id: window.__zwip.round.gameId, n: window.__zwip.round.n, dir: window.__zwip.round.dir }));
+  solvedLog.push(`${r.id}:${r.n}`);
   const waitReady = () => page.waitForFunction(() => !window.__zwip.round?.isReady || window.__zwip.round.isReady(), null, { polling: "raf", timeout: 15000 });
   if (fail) {
     if (r.id === "swipe") {
@@ -290,13 +293,24 @@ async function solveRound(page, lastN, fail = false) {
       await page.waitForTimeout(800);
       const c = await stageCenter(page);
       await page.mouse.click(c.x, c.y); // viel zu früh
+    } else if (r.id === "stack") {
+      await page.waitForFunction((n) => { const R = window.__zwip.round; return !R || R.n !== n || R.missing(); }, r.n, { polling: "raf", timeout: 8000 });
+      const c = await stageCenter(page);
+      await page.mouse.click(c.x, c.y);
+    } else if (r.id === "ampel") {
+      // Einfach festhalten – bei Rot wird man erwischt
+      const p = await center(page, (round) => round.pad);
+      await page.mouse.move(p.x, p.y);
+      await page.mouse.down();
+      await page.waitForFunction((n) => { const R = window.__zwip.round; return !R || R.n !== n || R.done(); }, r.n, { polling: "raf", timeout: 10000 });
+      await page.mouse.up();
     } else if (r.id === "order") {
       const p = await page.evaluate(() => {
         const b = window.__zwip.round.sequence[1].getBoundingClientRect();
         return { x: b.left + b.width / 2, y: b.top + b.height / 2 };
       });
       await page.mouse.click(p.x, p.y);
-    } else if (["odd", "more", "sum", "ink", "find", "pattern", "count", "spell", "big", "shape", "newone", "cups", "pair"].includes(r.id)) {
+    } else if (["odd", "more", "sum", "ink", "find", "pattern", "count", "spell", "big", "shape", "newone", "cups", "pair", "blocks"].includes(r.id)) {
       await waitReady();
       // Ein falsches Feld derselben Sorte tippen
       const p = await page.evaluate(() => {
@@ -317,7 +331,7 @@ async function solveRound(page, lastN, fail = false) {
       const c = await stageCenter(page);
       await page.mouse.click(c.x, c.y); // zu früh
     }
-    // pop: nichts tun → Zeit läuft ab
+    // pop, dodge, slice: nichts tun → Zeit läuft ab / Crash / Frucht fällt runter
     return r;
   }
   switch (r.id) {
@@ -333,7 +347,8 @@ async function solveRound(page, lastN, fail = false) {
     case "shape":
     case "newone":
     case "cups":
-    case "pair": {
+    case "pair":
+    case "blocks": {
       await waitReady();
       const p = await center(page, (round) => round.target);
       await page.mouse.click(p.x, p.y);
@@ -366,9 +381,9 @@ async function solveRound(page, lastN, fail = false) {
     case "mole": {
       for (let k = 0; k < 40; k++) {
         const st = await page
-          .waitForFunction(() => window.__zwip.round?.done?.() || window.__zwip.round?.nextMole?.(), null, { polling: "raf", timeout: 5000 })
+          .waitForFunction((n) => { const R = window.__zwip.round; return !R || R.n !== n || R.done() || R.nextMole(); }, r.n, { polling: "raf", timeout: 5000 })
           .then((h) => h.jsonValue().catch(() => true), () => true);
-        const done = await page.evaluate(() => !window.__zwip.round?.nextMole || window.__zwip.round.done());
+        const done = await page.evaluate((n) => { const R = window.__zwip.round; return !R || R.n !== n || R.done(); }, r.n);
         if (done) break;
         const p = await page.evaluate(() => {
           const m = window.__zwip.round?.nextMole?.();
@@ -398,6 +413,66 @@ async function solveRound(page, lastN, fail = false) {
       await page.waitForFunction(() => window.__zwip.round?.isGo?.(), null, { polling: "raf", timeout: 5000 });
       const c = await stageCenter(page);
       await page.mouse.click(c.x, c.y);
+      break;
+    }
+    case "dodge": {
+      for (let k = 0; k < 80; k++) {
+        await page.waitForFunction((n) => { const R = window.__zwip.round; return !R || R.n !== n || R.done() || R.need(); }, r.n, { polling: "raf", timeout: 8000 });
+        const p = await page.evaluate((n) => {
+          const R = window.__zwip.round;
+          if (!R || R.n !== n || R.done()) return "done";
+          const el = R.need();
+          if (!el) return null;
+          const b = el.getBoundingClientRect();
+          return { x: b.left + b.width / 2, y: b.top + b.height * 0.6 };
+        }, r.n);
+        if (p === "done") break;
+        if (p) await page.mouse.click(p.x, p.y);
+      }
+      break;
+    }
+    case "stack": {
+      for (let k = 0; k < 30; k++) {
+        await page.waitForFunction((n) => { const R = window.__zwip.round; return !R || R.n !== n || R.done() || R.aligned(); }, r.n, { polling: "raf", timeout: 10000 });
+        const done = await page.evaluate((n) => { const R = window.__zwip.round; return !R || R.n !== n || R.done(); }, r.n);
+        if (done) break;
+        const c = await stageCenter(page);
+        await page.mouse.click(c.x, c.y);
+        await page.waitForTimeout(120);
+      }
+      break;
+    }
+    case "slice": {
+      for (let k = 0; k < 80; k++) {
+        await page.waitForFunction((n) => { const R = window.__zwip.round; return !R || R.n !== n || R.done() || R.nextFruit(); }, r.n, { polling: "raf", timeout: 8000 });
+        const p = await page.evaluate((n) => {
+          const R = window.__zwip.round;
+          if (!R || R.n !== n || R.done()) return "done";
+          return R.nextFruit();
+        }, r.n);
+        if (p === "done") break;
+        if (!p) continue;
+        const sb = await page.locator(".stage").boundingBox();
+        const y0 = Math.max(sb.y + 6, p.y - 75);
+        const y1 = Math.min(sb.y + sb.height - 6, p.y + 75);
+        await page.mouse.move(p.x, y0);
+        await page.mouse.down();
+        await page.mouse.move(p.x, y1, { steps: 4 });
+        await page.mouse.up();
+      }
+      break;
+    }
+    case "ampel": {
+      const p = await center(page, (round) => round.pad);
+      await page.mouse.move(p.x, p.y);
+      for (let k = 0; k < 40; k++) {
+        await page.waitForFunction((n) => { const R = window.__zwip.round; return !R || R.n !== n || R.done() || R.light() === "green"; }, r.n, { polling: "raf", timeout: 8000 });
+        const done = await page.evaluate((n) => { const R = window.__zwip.round; return !R || R.n !== n || R.done(); }, r.n);
+        if (done) break;
+        await page.mouse.down();
+        await page.waitForFunction((n) => { const R = window.__zwip.round; return !R || R.n !== n || R.done() || R.light() !== "green"; }, r.n, { polling: "raf", timeout: 8000 });
+        await page.mouse.up();
+      }
       break;
     }
     case "swipe": {
@@ -669,6 +744,34 @@ try {
   const w3F = await B.page.evaluate(() => [...document.querySelectorAll(".tile b")].map((b) => Number(b.textContent)));
   check(w3F.every((p) => p === 0), `Neue Spiele erkennen Fehler (${w3fail.join(", ")} → ${w3F.join("/")})`);
 
+  // 8d) Die 5 Spiele der vierten Welle im Training: zweimal richtig, einmal absichtlich falsch
+  await B.page.goto(`${BASE}?e2e=1&only=blocks,dodge,stack,slice,ampel#/spielen`);
+  await B.page.waitForSelector('[data-act="free"]', { timeout: 5000 });
+  await B.page.click('[data-act="free"]', { force: true });
+  const w4 = [];
+  let w4n = 0;
+  for (let i = 0; i < 10; i++) {
+    const r = await solveRound(B.page, w4n);
+    w4n = r.n;
+    w4.push(r.id);
+    await B.page.screenshot({ path: `${SHOTS}/w4-${i + 1}-${r.id}.png` });
+  }
+  await B.page.waitForSelector(".score-big", { timeout: 15000 });
+  const w4Pts = await B.page.evaluate(() => [...document.querySelectorAll(".tile b")].map((b) => Number(b.textContent)));
+  check(new Set(w4).size === 5, `Alle 5 Spiele der 4. Welle kommen vor: ${w4.join(", ")}`);
+  check(w4Pts.every((p) => p > 0), `Block-Lücke, Ausweichen, Stapelturm, Schnippeln, Rotes Licht per echtem Tap/Wisch lösbar (Punkte ${w4Pts.join("/")})`);
+  await B.page.click('.actions-2 [data-act="free"]', { force: true });
+  w4n = 0;
+  const w4fail = [];
+  for (let i = 0; i < 10; i++) {
+    const r = await solveRound(B.page, w4n, true);
+    w4n = r.n;
+    w4fail.push(r.id);
+  }
+  await B.page.waitForSelector(".score-big", { timeout: 30000 });
+  const w4F = await B.page.evaluate(() => [...document.querySelectorAll(".tile b")].map((b) => Number(b.textContent)));
+  check(w4F.every((p) => p === 0), `4. Welle erkennt Fehler (${w4fail.join(", ")} → ${w4F.join("/")})`);
+
   // 9) Erklärkarte vor JEDER Aufgabe: läuft durch, lässt sich nicht wegtippen (Dauer im Test verkürzt)
   await B.page.goto(`${BASE}?e2e=1&explain=3000#/spielen`);
   await B.page.waitForSelector('[data-act="free"]');
@@ -710,7 +813,7 @@ try {
   check(true, "Zurück-Knopf führt zum vorherigen Tab");
   await B.page.click('.mode-card[href="#/minigames"]', { force: true });
   await B.page.waitForSelector(".mg-grid");
-  check((await B.page.locator(".mg-card").count()) === 22, "Minigames-Übersicht mit 22 Spielen");
+  check((await B.page.locator(".mg-card").count()) === 27, "Minigames-Übersicht mit 27 Spielen");
   await B.page.reload();
   await B.page.waitForSelector(".mg-grid", { timeout: 5000 });
   check(true, "Neuladen bleibt auf demselben Bildschirm");
@@ -1159,18 +1262,19 @@ try {
   check(overflow.length === 0, `Kein waagrechtes Scrollen bei 360 px${overflow.length ? ": " + overflow.join(", ") : ""}`);
   // Schwere Stufen ansehen (Layout bei vielen Feldern)
   for (const [id, n] of [["odd", 20], ["memory", 12], ["find", 14], ["pattern", 12], ["pop", 13], ["more", 15], ["ink", 12], ["swipe", 14], ["beat", 12], ["sum", 14], ["wait", 8], ["stop", 12],
-    ["count", 18], ["mole", 14], ["spell", 12], ["clock", 10], ["big", 17], ["big", 9], ["shape", 14], ["order", 15], ["newone", 12], ["cups", 12], ["pair", 15], ["pair", 3]]) {
+    ["count", 18], ["mole", 14], ["spell", 12], ["clock", 10], ["big", 17], ["big", 9], ["shape", 14], ["order", 15], ["newone", 12], ["cups", 12], ["pair", 15], ["pair", 3],
+    ["blocks", 3], ["blocks", 12], ["dodge", 12], ["stack", 10], ["slice", 12], ["ampel", 10]]) {
     await tP.evaluate(([id, n]) => window.__zwip.previewStage(id, n), [id, n]);
     await tP.waitForTimeout(450);
     const ow = await tP.evaluate(() => {
       const st = document.querySelector(".e2e-preview .stage").getBoundingClientRect();
       return [...document.querySelectorAll(".e2e-preview .stage *")].filter((e) => {
         const b = e.getBoundingClientRect();
-        return b.width > 0 && (b.right > st.right + 2 || b.left < st.left - 2) && !e.closest(".bubble");
+        return b.width > 0 && (b.right > st.right + 2 || b.left < st.left - 2) && !e.closest(".bubble") && !e.classList.contains("stack-block");
       }).length;
     });
     check(ow === 0, `${id} Stufe ${n}: alles passt auf ein 360-px-Handy`);
-    if (id === "newone" || id === "count" || id === "cups") await tP.waitForTimeout(1600);
+    if (["newone", "count", "cups", "dodge", "slice", "stack", "ampel"].includes(id)) await tP.waitForTimeout(1600);
     await tP.screenshot({ path: `${SHOTS}/s360-${id}-${n}.png` });
   }
   await tP.evaluate(() => document.querySelector(".e2e-preview")?.remove());
