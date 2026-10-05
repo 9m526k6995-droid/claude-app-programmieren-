@@ -68,9 +68,19 @@ export interface MyProfileHandlers {
   onSignOut: () => void;
 }
 
+/** Eigenes Profil als Popup */
 export function openMyProfile(h: MyProfileHandlers) {
   modal(`<div class="pf" aria-busy="true"><div class="empty">Lädt…</div></div>`, (el, close) => {
-    const root = el.querySelector<HTMLElement>(".pf")!;
+    mountMyProfile(el.querySelector<HTMLElement>(".pf")!, h, close);
+  });
+}
+
+/**
+ * Eigenes Profil in ein Element einbauen – als eigener Bildschirm (ohne `close`)
+ * oder im Popup (mit `close`).
+ */
+export function mountMyProfile(root: HTMLElement, h: MyProfileHandlers, close?: () => void) {
+  {
     let card: ProfileCard | null = h.initial;
     let busy = false;
 
@@ -105,10 +115,14 @@ export function openMyProfile(h: MyProfileHandlers) {
             <button class="pf-row" type="button" data-pf="email"><span aria-hidden="true">✉️</span><b>E-Mail ändern</b><em class="account-mail">${esc(currentUser()?.email || h.email)}</em><i aria-hidden="true">›</i></button>
           </div>
         </section>
-        <div class="actions-row">
+        ${
+          close
+            ? `<div class="actions-row">
           <button class="btn ghost danger sm" type="button" data-pf="logout">Abmelden</button>
           <button class="btn ghost sm" type="button" data-close>Schließen</button>
-        </div>`;
+        </div>`
+            : `<button class="btn ghost danger sm" type="button" data-pf="logout">Abmelden</button>`
+        }`;
       bind();
     };
 
@@ -162,8 +176,12 @@ export function openMyProfile(h: MyProfileHandlers) {
       });
       root.querySelectorAll('[data-pf="rename"]').forEach((b) =>
         b.addEventListener("click", () => {
-          close();
-          h.onRename(() => openMyProfile({ ...h, initial: card }));
+          if (close) {
+            close();
+            h.onRename(() => openMyProfile({ ...h, initial: card }));
+          } else {
+            h.onRename(() => root.isConnected && mountMyProfile(root, { ...h, initial: card }));
+          }
         }),
       );
       root.querySelector('[data-pf="password"]')!.addEventListener("click", () => openChangePassword(currentUser()?.email || h.email));
@@ -171,7 +189,7 @@ export function openMyProfile(h: MyProfileHandlers) {
         openChangeEmail(currentUser()?.email || h.email, () => render()),
       );
       root.querySelector('[data-pf="logout"]')!.addEventListener("click", () => {
-        close();
+        close?.();
         h.onSignOut();
       });
       if (card?.username) bindLink(root, card.username, `Das ist mein ZWIP-Profil – adde mich! ⚡`);
@@ -187,7 +205,7 @@ export function openMyProfile(h: MyProfileHandlers) {
       .catch((e) => {
         if (root.isConnected && !busy) render(errMsg(e));
       });
-  });
+  }
 }
 
 // =====================================================================

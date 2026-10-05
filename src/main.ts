@@ -1,5 +1,5 @@
 import "./style.css";
-import { dayIndex, daySeed, msUntilNextDay, makeRng, dateOfDay } from "./rng";
+import { dayIndex, daySeed, msUntilNextDay, makeRng, dateOfDay, hashStr } from "./rng";
 import {
   loadState,
   saveState,
@@ -26,7 +26,7 @@ import {
 } from "./share";
 import { confetti, floatText, shake, countUp } from "./fx";
 import { publicBase, CONFIG } from "./config";
-import { restoreSession, currentUser, signOut, onAuthChange, authConfigured } from "./auth";
+import { restoreSession, currentUser, signOut, onAuthChange } from "./auth";
 import { TROPHY_TASKS, scoreRound, tierFor, levelFor, formatTrophies, formatDelta, LEAGUES, type TaskResult } from "./trophies";
 import {
   startTrophyRound,
@@ -40,15 +40,31 @@ import {
   getMyProfileCard,
   cachedAvatar,
   setCachedAvatar,
-  onAvatarChange,
+  startMinigameRun,
+  finishMinigameRun,
+  getMinigameBoard,
+  getMyMinigameBests,
   type MyProfile,
+  type MinigameBest,
   type RoundStart,
 } from "./social";
 import { renderPath, renderTrophyResult, renderWorldBoard, askUsername, suggestUsername, leagueUp } from "./trophyUi";
 import { renderFriends } from "./friendsUi";
 import { renderStart } from "./startmenu";
-import { openMyProfile, openPlayerProfile } from "./profileUi";
-import { avatarHtml } from "./profileKit";
+import { mountMyProfile, openPlayerProfile } from "./profileUi";
+import { routeParts, go, shellHtml, replaceRoute, type TabId } from "./nav";
+import {
+  minigameGridHtml,
+  minigameDetailHtml,
+  minigameBoardHtml,
+  minigameRunHtml,
+  minigameResultHtml,
+  minigameShareText,
+  startCard,
+  stageClear,
+  type BestMap,
+  type MgResultView,
+} from "./minigameUi";
 import { esc, sleep, toast, modal } from "./ui";
 
 declare const __ZWIP_SINGLE__: boolean;
@@ -64,9 +80,35 @@ const today = () => dayIndex();
 interface TestHook {
   round: (Record<string, unknown> & { gameId: string }) | null;
   state: () => State;
+  /** Baut ein Minispiel auf Stufe n testweise auf und wieder ab (nur für automatische Tests) */
+  mountStage?: (id: string, n: number) => { limit: number };
+  /** Zeigt ein Minispiel auf Stufe n bildschirmfüllend (nur für Screenshots in Tests) */
+  previewStage?: (id: string, n: number) => void;
 }
 const hook: TestHook = { round: null, state: () => S };
 if (E2E) (window as unknown as { __zwip: TestHook }).__zwip = hook;
+if (E2E)
+  hook.mountStage = (id, n) => {
+    const el = document.createElement("div");
+    el.className = "stage";
+    el.style.cssText = "position:fixed;left:-9999px;top:0;width:390px;height:600px";
+    document.body.append(el);
+    const m = GAME_BY_ID[id].mount({ el, rng: makeRng(n * 7919), level: 0, stage: n, finish: () => {}, sfx, expose: () => {} });
+    m.cleanup?.();
+    el.remove();
+    return { limit: m.limit };
+  };
+if (E2E)
+  hook.previewStage = (id, n) => {
+    document.querySelector(".e2e-preview")?.remove();
+    const wrap = document.createElement("div");
+    wrap.className = "screen play e2e-preview";
+    wrap.style.cssText = "position:fixed;inset:0;z-index:99;background:var(--ink)";
+    wrap.innerHTML = `<div class="hud mg-hud"><span class="icon-btn">✕</span><div class="mg-hud-mid"><b>${GAME_BY_ID[id].emoji} ${GAME_BY_ID[id].title}</b><span>Stufe <b>${n}</b></span></div><div class="mg-hud-best">Rekord<b>–</b></div></div><div class="timer"><div class="timer-fill" style="width:70%"></div></div><div class="stage-holder"><div class="stage g-${id}" style="background:${GAME_BY_ID[id].bg}"></div></div>`;
+    document.body.append(wrap);
+    const el = wrap.querySelector<HTMLElement>(".stage")!;
+    GAME_BY_ID[id].mount({ el, rng: makeRng(n * 31), level: 0, stage: n, finish: () => {}, sfx, expose: () => {} });
+  };
 
 let roundCounter = 0;
 let timers: number[] = [];
@@ -164,7 +206,7 @@ function openPendingProfile() {
       if (myProfile) askName(then);
       else void loadProfile().then(() => (myProfile?.username ? then() : askName(then)));
     },
-    openSelf: () => openProfile(),
+    openSelf: () => navigate("profil"),
   });
 }
 
@@ -218,22 +260,77 @@ function miniGrid(rounds: number[]) {
   return `<span class="mini-grid">${rounds.map((p) => `<i class="t-${tileOf(p)}"></i>`).join("")}</span>`;
 }
 
-function home() {
+// ---------- Navigation ----------
+
+/** Läuft gerade eine Runde oder ein Minigame-Lauf? Dann beendet der Zurück-Knopf den Lauf. */
+let running = false;
+/** Wurde der laufende Lauf durch Navigation (Zurück-Knopf, Tab) beendet? */
+let navAbort = false;
+/** Letzte Tab-Route – dorthin führt „Zurück“ vom Trophäenpfad */
+let lastRoute = "start";
+
+function navigate(path: string) {
+  go(path, renderRoute);
+}
+
+/** Seitengerüst mit Kopfzeile und Tab-Leiste zeichnen, liefert den Inhaltsbereich. */
+function shell(tab: TabId | null, title: string, body: string, opts: { back?: string; titleHtml?: string; cls?: string } = {}): HTMLElement {
   clearTimers();
+  app.innerHTML = shellHtml({ tab, title, flame: myTrophyLabel(), body, ...opts });
+  return document.getElementById("page")!;
+}
+
+/** Zeichnet den Bildschirm, der zur aktuellen Adresse (#/…) gehört. */
+function renderRoute() {
+  clearTimers();
+  running = false;
+  document.querySelectorAll(".modal-bg").forEach((m) => m.remove());
+  const parts = routeParts();
+  if (parts[0] !== "pfad") lastRoute = parts.join("/");
+  window.scrollTo(0, 0);
+  switch (parts[0]) {
+    case "spielen":
+      return playMenuScreen();
+    case "minigames":
+      return parts[1] && GAME_BY_ID[parts[1]] ? minigameDetailScreen(parts[1]) : minigamesScreen();
+    case "ranglisten":
+      return void boardsScreen(parts[1], parts[2]);
+    case "freunde":
+      return friendsScreen();
+    case "profil":
+      return profileScreen();
+    case "pfad":
+      return void openPath();
+    default:
+      return startScreen();
+  }
+}
+
+window.addEventListener("hashchange", () => {
+  if (!currentUser()) return;
+  if (running) {
+    // Zurück-Knopf während eines Laufs: Lauf beenden, danach wird die neue Seite gezeigt
+    navAbort = true;
+    aborted = true;
+    return;
+  }
+  renderRoute();
+});
+
+// ---------- Start ----------
+
+function startScreen() {
   const t = today();
   const played = S.daily[t];
   const streak = currentStreak(S, t);
 
-  const challengeCard = pending
-    ? `<div class="duel-card pop-in">
-        <div class="duel-ico">⚔️</div>
-        <div><b>${esc(pending.n)}</b> fordert dich heraus<br><span class="muted">${sumPoints(pending.r)} Punkte · ${pending.m === "d" ? `Daily #${pending.d}` : "Training"}</span></div>
-      </div>`
-    : "";
-
   let main: string;
   if (pending) {
-    main = `<button class="play-btn" data-act="duel"><span class="play-ico">⚔️</span><span><b>Duell starten</b><small>Gleiche Runde. Wer holt mehr?</small></span></button>`;
+    main = `<div class="duel-card pop-in">
+        <div class="duel-ico">⚔️</div>
+        <div><b>${esc(pending.n)}</b> fordert dich heraus<br><span class="muted">${sumPoints(pending.r)} Punkte · ${pending.m === "d" ? `Daily #${pending.d}` : "Training"}</span></div>
+      </div>
+      <button class="play-btn" data-act="duel"><span class="play-ico">⚔️</span><span><b>Duell starten</b><small>Gleiche Runde. Wer holt mehr?</small></span></button>`;
   } else if (played) {
     main = `<div class="done-card">
         <div class="done-top"><span>Daily #${t}</span><b>${played.score}</b></div>
@@ -245,38 +342,23 @@ function home() {
         <div class="muted next">Neue Daily in <b id="countdown">${fmtCountdown(msUntilNextDay())}</b></div>
       </div>`;
   } else {
-    main = `<button class="play-btn" data-act="daily"><span class="play-ico">▶</span><span><b>Daily #${t} spielen</b><small>30 Sekunden · jeden Tag neu</small></span></button>`;
+    main = `<button class="play-btn" data-act="daily"><span class="play-ico">▶</span><span><b>Daily #${t} spielen</b><small>10 Blitz-Challenges · für alle gleich</small></span></button>`;
   }
 
-  app.innerHTML = `
-  <div class="screen home">
-    <header class="topbar">
-      <button class="trophy-pill" data-act="path" aria-label="Trophäenpfad öffnen">
-        <span class="flame" aria-hidden="true">🔥</span><b id="trophy-count">${myTrophyLabel()}</b>
-      </button>
-      <div class="top-actions">
-        <button class="icon-btn avatar-btn" data-act="profile" aria-label="Mein Profil">${avatarHtml(myProfile?.username || S.name, cachedAvatar(currentUser()?.id), "top-avatar")}</button>
-        <button class="icon-btn" data-act="sound" aria-label="Ton an/aus">${S.muted ? "🔇" : "🔊"}</button>
-        <button class="icon-btn" data-act="settings" aria-label="Einstellungen">⚙️</button>
-      </div>
-    </header>
-    <div class="hero">
-      <h1 class="logo" aria-label="ZWIP"><span>Z</span><span>W</span><span>I</span><span>P</span></h1>
-      <p class="tagline">10 Blitz-Challenges · 30 Sekunden · jeden Tag neu</p>
-    </div>
-    ${challengeCard}
-    ${main}
-    <div class="modes">
-      <button class="mode" data-act="free"><span>🏋️</span><b>Training</b><small>${S.best.free ? `Best ${S.best.free}` : "unbegrenzt"}</small></button>
-      <button class="mode" data-act="endless"><span>♾️</span><b>Endlos</b><small>${S.best.endless ? `Best ${S.best.endless}` : "1 Fehler = Ende"}</small></button>
-      <button class="mode" data-act="board"><span>🏆</span><b>Bestenliste</b><small>Crew & Welt</small></button>
-      <button class="mode" data-act="friends"><span>👥</span><b>Freunde</b><small>suchen & adden</small></button>
-    </div>
-    <div class="week-wrap">
-      <div class="week-head"><span>Diese Woche</span><span class="streak-mini ${streak ? "on" : ""}">📆 ${streak} ${streak === 1 ? "Tag" : "Tage"} am Stück</span></div>
+  shell(
+    "start",
+    "Start",
+    `
+    <section class="start-hero">
+      <h2 class="logo small" aria-label="ZWIP"><span>Z</span><span>W</span><span>I</span><span>P</span></h2>
+      <p class="tagline">10 Blitz-Challenges · jeden Tag neu</p>
+    </section>
+    <section class="start-main">${main}</section>
+    <section class="week-wrap">
+      <div class="week-head"><h2 class="sec-title">Diese Woche</h2><span class="streak-mini ${streak ? "on" : ""}">📆 ${streak} ${streak === 1 ? "Tag" : "Tage"} am Stück</span></div>
       <div class="week" aria-label="Diese Woche">${weekStrip(t)}</div>
-    </div>
-  </div>`;
+    </section>`,
+  );
 
   if (played && !pending) {
     timers.push(
@@ -284,11 +366,41 @@ function home() {
         const el = document.getElementById("countdown");
         if (!el) return;
         const ms = msUntilNextDay();
-        if (ms < 1000 || today() !== t) home();
+        if (ms < 1000 || today() !== t) renderRoute();
         else el.textContent = fmtCountdown(ms);
       }, 1000),
     );
   }
+}
+
+// ---------- Spielen ----------
+
+function modeCard(o: { act?: string; href?: string; icon: string; title: string; desc: string; meta: string; cls?: string }): string {
+  const inner = `<span class="mc-ico" aria-hidden="true">${o.icon}</span>
+      <span class="mc-text"><b>${o.title}</b><small>${o.desc}</small></span>
+      <span class="mc-meta">${o.meta}</span>
+      <i class="mc-go" aria-hidden="true">›</i>`;
+  return o.href
+    ? `<a class="mode-card ${o.cls ?? ""}" href="${o.href}">${inner}</a>`
+    : `<button class="mode-card ${o.cls ?? ""}" data-act="${o.act}">${inner}</button>`;
+}
+
+function playMenuScreen() {
+  const t = today();
+  const played = S.daily[t];
+  shell(
+    "spielen",
+    "Spielen",
+    `
+    <p class="page-intro muted">Such dir aus, wie du spielen willst.</p>
+    <div class="mode-list">
+      ${modeCard({ act: "daily", icon: "⚡", title: `Daily #${t}`, desc: played ? "Heute schon gespielt – morgen gibt's eine neue." : "10 Challenges – für alle gleich, jeden Tag neu.", meta: played ? `<b>${played.score}</b>` : `<em class="tag">Neu</em>`, cls: "c-daily" })}
+      ${modeCard({ act: "tmode", icon: "🏆", title: "Trophäen-Modus", desc: "15 Aufgaben – sammle Trophäen und steig in den Ligen auf.", meta: `<b>🔥 ${myTrophyLabel()}</b>`, cls: "c-trophy" })}
+      ${modeCard({ href: "#/minigames", icon: "🎮", title: "Minigames", desc: "Jedes Spiel einzeln – Stufe für Stufe schwerer.", meta: `<em class="tag lime">12 Spiele</em>`, cls: "c-mini" })}
+      ${modeCard({ act: "free", icon: "🏋️", title: "Training", desc: "10 zufällige Challenges – so oft du willst.", meta: S.best.free ? `Best <b>${S.best.free}</b>` : "" })}
+      ${modeCard({ act: "endless", icon: "♾️", title: "Endlos", desc: "Bis zum ersten Fehler.", meta: S.best.endless ? `Best <b>${S.best.endless}</b>` : "" })}
+    </div>`,
+  );
 }
 
 // ---------- Spielablauf ----------
@@ -318,35 +430,16 @@ function playScreen(mode: Mode, total: number) {
   </div>`;
 }
 
-/** Erklärzeit beim ersten Mal. In automatischen Tests kürzer (per ?explain=ms einstellbar). */
+/** Erklärzeit vor jeder Aufgabe. In automatischen Tests kürzer (per ?explain=ms einstellbar). */
 const EXPLAIN = E2E ? Number(params.get("explain") ?? 400) : EXPLAIN_MS;
 
 async function showIntro(holder: HTMLElement, spec: RoundSpec, label: string) {
-  const g = GAME_BY_ID[spec.gameId];
-  const first = !S.seen.includes(g.id);
-  if (first) {
-    S.seen.push(g.id);
-    save();
-    return explainGame(holder, g, label);
-  }
-  const intro = document.createElement("div");
-  intro.className = "intro";
-  intro.style.background = g.bg;
-  intro.innerHTML = `<div class="intro-round">${label}</div><div class="intro-emoji">${g.emoji}</div><div class="intro-title">${g.title}</div>`;
-  holder.replaceChildren(intro);
-  sfx.tick();
-  await new Promise<void>((res) => {
-    const t = setTimeout(res, 680);
-    intro.addEventListener("pointerdown", () => {
-      clearTimeout(t);
-      res();
-    });
-  });
+  return explainGame(holder, GAME_BY_ID[spec.gameId], label);
 }
 
 /**
- * Erklärung beim ersten Mal: mindestens EXPLAIN Millisekunden (10 s), mit Countdown.
- * Lässt sich bewusst nicht wegtippen, damit wirklich jede/r weiß, was zu tun ist.
+ * Erklärkarte vor jeder Aufgabe in den gemischten Modi: genau EXPLAIN Millisekunden (4 s), mit Countdown.
+ * Lässt sich bewusst nicht wegtippen. Abbrechen (✕) beendet sie sofort.
  */
 async function explainGame(holder: HTMLElement, g: MicroGame, label: string) {
   const secs = Math.ceil(EXPLAIN / 1000);
@@ -356,7 +449,7 @@ async function explainGame(holder: HTMLElement, g: MicroGame, label: string) {
   intro.setAttribute("role", "dialog");
   intro.setAttribute("aria-label", `So geht ${g.title}`);
   intro.innerHTML = `
-    <div class="intro-round">${label} · <span class="explain-new">NEU</span></div>
+    <div class="intro-round">${label}</div>
     <div class="intro-emoji">${g.emoji}</div>
     <div class="intro-title">${g.title}</div>
     <p class="explain-text">${g.howto}</p>
@@ -437,6 +530,7 @@ function playRound(holder: HTMLElement, spec: RoundSpec): Promise<RoundResult> {
       el: stage,
       rng: makeRng(spec.seed),
       level: spec.level,
+      stage: spec.stage,
       finish: (o) => {
         if (aborted) return;
         finish(o);
@@ -519,6 +613,8 @@ async function startRun(mode: Mode, opts: RunOpts = {}) {
   clearTimers();
   sfx.unlock();
   aborted = false;
+  navAbort = false;
+  running = true;
   S.plays += 1;
   save();
   const t = today();
@@ -548,9 +644,9 @@ async function startRun(mode: Mode, opts: RunOpts = {}) {
       specs.push(spec);
       document.getElementById("ecount")!.textContent = String(i + 1);
       await showIntro(holder, spec, `Runde ${i + 1}`);
-      if (aborted) return home();
+      if (aborted) return renderRoute();
       const r = await playRound(holder, spec);
-      if (aborted) return home();
+      if (aborted) return renderRoute();
       rounds.push(r.points);
       if (r.ok) {
         total += r.points;
@@ -559,6 +655,7 @@ async function startRun(mode: Mode, opts: RunOpts = {}) {
       await feedback(holder, r);
       if (!r.ok) break;
     }
+    running = false;
     const isBest = total > S.best.endless;
     S.best.endless = Math.max(S.best.endless, total);
     save();
@@ -575,9 +672,9 @@ async function startRun(mode: Mode, opts: RunOpts = {}) {
   for (let i = 0; i < list.length; i++) {
     const spec = list[i];
     await showIntro(holder, spec, `${i + 1} / ${ROUNDS}`);
-    if (aborted) return home();
+    if (aborted) return renderRoute();
     const r = await playRound(holder, spec);
-    if (aborted) return home();
+    if (aborted) return renderRoute();
     rounds.push(r.points);
     total += r.points;
     const dot = document.querySelector(`[data-dot="${i}"]`);
@@ -586,6 +683,7 @@ async function startRun(mode: Mode, opts: RunOpts = {}) {
     await feedback(holder, r);
   }
 
+  running = false;
   const result: DayResult = { score: total, rounds };
   if (mode === "daily") {
     recordDaily(S, t, result);
@@ -735,38 +833,58 @@ function resultShareText(d: ResultData, withChallenge: boolean): string {
   });
 }
 
-// ---------- Bestenliste ----------
+// ---------- Ranglisten ----------
 
-async function board(tab: "crew" | "world" = "crew") {
-  clearTimers();
+let mgBests: BestMap | null = null;
+
+async function loadMgBests(): Promise<BestMap | null> {
+  try {
+    const list = await getMyMinigameBests();
+    mgBests = new Map(list.map((b) => [b.game, b]));
+  } catch {
+    /* ohne Netz: alte Werte behalten */
+  }
+  return mgBests;
+}
+
+function segHtml(active: string): string {
+  const seg = [
+    ["welt", "Trophäen (Welt)"],
+    ["minigames", "Minigames"],
+    ["crew", "Crew (Daily)"],
+  ];
+  return `<nav class="seg" aria-label="Rangliste wählen">${seg
+    .map(([id, label]) => `<a href="#/ranglisten/${id}" class="${id === active ? "on" : ""}"${id === active ? ` aria-current="page"` : ""}>${label}</a>`)
+    .join("")}</nav>`;
+}
+
+function openPlayer(name: string) {
+  openPlayerProfile(name, {
+    hasName: () => Boolean(myProfile?.username),
+    askName: (then) => askName(then),
+    openSelf: () => navigate("profil"),
+  });
+}
+
+async function boardsScreen(sub = "welt", gameId?: string) {
+  if (!["welt", "minigames", "crew"].includes(sub)) sub = "welt";
   const t = today();
-  app.innerHTML = `
-  <div class="screen board">
-    <header class="topbar">
-      <button class="icon-btn" data-act="home" aria-label="Zurück">←</button>
-      <span class="mode-tag">${tab === "world" ? "Weltrangliste" : `Bestenliste · #${t}`}</span>
-      <span class="icon-btn ghost-slot"></span>
-    </header>
-    ${
-      authConfigured
-        ? `<div class="tabs"><button class="${tab === "crew" ? "on" : ""}" data-act="tab-crew">Crew (Daily)</button><button class="${tab === "world" ? "on" : ""}" data-act="tab-world">Welt 🏆</button></div>`
-        : ""
-    }
-    <div id="list" class="list"></div>
-    ${
-      tab === "crew"
-        ? `<div class="add-card">
-            <b>Crew erweitern</b>
-            <p class="muted">Schick deinen Duell-Link rum. Wer ihn spielt, schickt dir seinen zurück – und landet hier.</p>
-            <button class="btn primary sm" data-act="${S.daily[t] ? "challenge-today" : "daily"}">${S.daily[t] ? "Duell-Link teilen ⚔️" : "Erst Daily spielen ▶"}</button>
-            <div class="row"><input id="paste" placeholder="Link oder Code einfügen" autocomplete="off"><button class="btn sm" data-act="paste">Rein</button></div>
-          </div>`
-        : ""
-    }
-  </div>`;
-  const list = document.getElementById("list")!;
 
-  if (tab === "crew") {
+  if (sub === "crew") {
+    const page = shell(
+      "ranglisten",
+      "Ranglisten",
+      `${segHtml(sub)}
+      <p class="page-intro muted">Daily #${t} – alle, deren Duell-Links du gespielt hast.</p>
+      <div id="list" class="list"></div>
+      <section class="add-card">
+        <h2 class="sec-title">Crew erweitern</h2>
+        <p class="muted">Schick deinen Duell-Link rum. Wer ihn spielt, schickt dir seinen zurück – und landet hier.</p>
+        <button class="btn primary sm" data-act="${S.daily[t] ? "challenge-today" : "daily"}">${S.daily[t] ? "Duell-Link teilen ⚔️" : "Erst Daily spielen ▶"}</button>
+        <div class="row"><input id="paste" placeholder="Link oder Code einfügen" autocomplete="off" aria-label="Duell-Link oder Code"><button class="btn sm" data-act="paste">Rein</button></div>
+      </section>`,
+    );
+    const list = page.querySelector<HTMLElement>("#list")!;
     const rows: { name: string; score: number; rounds: number[]; me?: boolean }[] = [];
     if (S.daily[t]) rows.push({ name: S.name, ...S.daily[t], me: true });
     Object.values(S.crew).forEach((m) => {
@@ -780,69 +898,244 @@ async function board(tab: "crew" | "world" = "crew") {
             (r, i) =>
               `<div class="row-item ${r.me ? "me" : ""}"><span class="rk">${["🥇", "🥈", "🥉"][i] ?? i + 1}</span><span class="nm">${esc(r.name)}${r.me ? " (du)" : ""}</span>${miniGrid(r.rounds)}<b>${r.score}</b></div>`,
           )
-          .join("") +
-        (crewCount ? `<p class="muted center">${crewCount} in deiner Crew</p>` : "")
+          .join("") + (crewCount ? `<p class="muted center">${crewCount} in deiner Crew</p>` : "")
       : `<div class="empty">Heute noch niemand hier.<br>Spiel die Daily und fordere jemanden heraus!</div>`;
     return;
   }
 
+  if (sub === "minigames") {
+    const id = gameId && GAME_BY_ID[gameId] ? gameId : "memory";
+    const g = GAME_BY_ID[id];
+    const page = shell(
+      "ranglisten",
+      "Ranglisten",
+      `${segHtml(sub)}
+      <div class="chips" role="tablist" aria-label="Minigame wählen">${GAMES_ORDER.map(
+        (x) =>
+          `<a href="#/ranglisten/minigames/${x.id}" class="chip ${x.id === id ? "on" : ""}" role="tab" aria-selected="${x.id === id}"><span aria-hidden="true">${x.emoji}</span>${esc(x.title)}</a>`,
+      ).join("")}</div>
+      <div class="board-head"><h2 class="sec-title">${g.emoji} ${esc(g.title)}</h2><a class="link-btn" href="#/minigames/${id}">Spielen ›</a></div>
+      <div id="list"><div class="empty">Lädt…</div></div>`,
+    );
+    page.querySelector(".chip.on")?.scrollIntoView({ block: "nearest", inline: "center" });
+    const list = page.querySelector<HTMLElement>("#list")!;
+    try {
+      const b = await getMinigameBoard(id, 50);
+      if (!list.isConnected) return;
+      list.innerHTML = minigameBoardHtml(b);
+      list.querySelectorAll<HTMLElement>("[data-player]").forEach((el) => el.addEventListener("click", () => openPlayer(el.dataset.player!)));
+    } catch (e) {
+      if (list.isConnected) list.innerHTML = `<div class="inline-error" role="alert">${esc(errMsg(e))}</div>`;
+    }
+    return;
+  }
+
   // Trophäen-Weltrangliste – kommt immer aus der Datenbank, sortiert nach Trophäen absteigend
-  list.innerHTML = `<div class="empty">Lädt…</div>`;
+  const page = shell("ranglisten", "Ranglisten", `${segHtml(sub)}<div id="list" class="list"><div class="empty">Lädt…</div></div>`);
+  const list = page.querySelector<HTMLElement>("#list")!;
   try {
     const b = await getTrophyBoard(100);
     if (!list.isConnected) return;
-    renderWorldBoard(list, b, { onSetName: () => askName(() => board("world")) });
+    renderWorldBoard(list, b, { onSetName: () => askName(() => renderRoute()) });
   } catch (e) {
     if (list.isConnected) list.innerHTML = `<div class="inline-error" role="alert">${esc(errMsg(e))}</div>`;
   }
 }
 
-// ---------- Einstellungen ----------
+// ---------- Freunde ----------
 
-function settings() {
-  modal(
-    `<h3>Einstellungen</h3>
-     <label class="lbl" for="set-name">Dein Name</label>
-     <input id="set-name" maxlength="20" value="${esc(S.name)}" autocomplete="nickname">
-     <label class="toggle"><input type="checkbox" id="set-sound" ${S.muted ? "" : "checked"}> Sound</label>
-     <div class="account-box">
-       <div><span class="lbl">Angemeldet als</span><b class="account-mail">${esc(currentUser()?.email ?? "")}</b></div>
-       <button class="btn ghost sm" id="set-logout" type="button">Abmelden</button>
-     </div>
-     <button class="btn ghost sm" id="set-explain" type="button">Minispiel-Erklärungen wieder zeigen</button>
-     <div class="how">
-       <b>So geht ZWIP</b>
-       <p>Jeden Tag gibt es eine Daily mit 10 Blitz-Challenges – für alle gleich. Schnell + richtig = mehr Punkte (max. 1000). Teile dein Ergebnis oder schick einen Duell-Link: Deine Freunde spielen exakt dieselbe Runde.</p>
-       <p class="muted">Keine Werbung, keine Lootboxen.</p>
-     </div>
-     <button class="btn primary" id="set-save">Speichern</button>`,
-    (el, close) => {
-      el.querySelector("#set-explain")!.addEventListener("click", (e) => {
-        S.seen = [];
-        save();
-        const b = e.currentTarget as HTMLButtonElement;
-        b.disabled = true;
-        b.textContent = "Erklärungen kommen wieder ✓";
-      });
-      el.querySelector("#set-logout")!.addEventListener("click", async () => {
-        close();
-        await signOut();
-        toast("Du bist abgemeldet 👋");
-      });
-      el.querySelector("#set-save")!.addEventListener("click", () => {
-        const n = (el.querySelector("#set-name") as HTMLInputElement).value.trim();
-        if (n) {
-          S.name = n.slice(0, 20);
-          S.nameSet = true;
-        }
-        S.muted = !(el.querySelector("#set-sound") as HTMLInputElement).checked;
-        sfx.setMuted(S.muted);
-        save();
-        close();
-        home();
-      });
-    },
+function friendsScreen() {
+  const page = shell("freunde", "Freunde", "");
+  renderFriends(page, {
+    hasName: () => Boolean(myProfile?.username),
+    askName: (then) => askName(then),
+  });
+  if (!myProfile) void loadProfile().then(() => document.querySelector(".friends") && routeParts()[0] === "freunde" && !myProfile?.username && renderRoute());
+}
+
+// ---------- Profil (mit Einstellungen) ----------
+
+function profileScreen() {
+  const uid = currentUser()?.id;
+  const p = myProfile ?? cachedProfile(uid);
+  const page = shell(
+    "profil",
+    "Profil",
+    `<div class="pf" id="pf-root" aria-busy="true"><div class="empty">Lädt…</div></div>
+    <section class="card-sec settings">
+      <h2 class="sec-title">Einstellungen</h2>
+      <label class="lbl" for="set-name">Name für Duell-Links</label>
+      <div class="row"><input id="set-name" maxlength="20" value="${esc(S.name)}" autocomplete="nickname"><button class="btn sm" id="set-save" type="button">Speichern</button></div>
+      <label class="toggle"><input type="checkbox" id="set-sound" ${S.muted ? "" : "checked"}> Ton an</label>
+    </section>
+    <section class="card-sec how">
+      <h2 class="sec-title">So geht ZWIP</h2>
+      <p>Jeden Tag gibt es eine Daily mit 10 Blitz-Challenges – für alle gleich. Vor jeder Aufgabe wird sie 4 Sekunden lang erklärt. Schnell + richtig = mehr Punkte (max. 1000).</p>
+      <p>Im Trophäen-Modus sammelst du Trophäen für die Weltrangliste, bei den Minigames spielst du ein Spiel Stufe für Stufe – mit eigener Rangliste.</p>
+      <p class="muted">Keine Werbung, keine Lootboxen.</p>
+    </section>`,
   );
+  mountMyProfile(page.querySelector<HTMLElement>("#pf-root")!, {
+    email: currentUser()?.email ?? "",
+    initial: p ? { ...p, avatar: cachedAvatar(uid) } : null,
+    onAvatar: (a) => setCachedAvatar(currentUser()?.id, a),
+    onRename: (then) => askName(then),
+    onSignOut: async () => {
+      await signOut();
+      toast("Du bist abgemeldet 👋");
+    },
+  });
+  page.querySelector("#set-save")!.addEventListener("click", () => {
+    const n = page.querySelector<HTMLInputElement>("#set-name")!.value.trim();
+    if (n) {
+      S.name = n.slice(0, 20);
+      S.nameSet = true;
+      save();
+      toast("Name gespeichert ✓");
+    }
+  });
+  page.querySelector<HTMLInputElement>("#set-sound")!.addEventListener("change", (e) => {
+    S.muted = !(e.target as HTMLInputElement).checked;
+    sfx.setMuted(S.muted);
+    save();
+  });
+}
+
+// ---------- Minigames ----------
+
+const GAMES_ORDER = Object.values(GAME_BY_ID);
+
+function minigamesScreen() {
+  const page = shell("spielen", "Minigames", `<p class="page-intro muted">Such dir ein Spiel aus. Jede Stufe wird schwerer – ein Fehler und der Lauf ist vorbei.</p><div id="mg-grid">${minigameGridHtml(mgBests)}</div>`, { back: "spielen" });
+  void loadMgBests().then((b) => {
+    const grid = page.querySelector("#mg-grid");
+    if (grid?.isConnected && b) grid.innerHTML = minigameGridHtml(b);
+  });
+}
+
+function minigameDetailScreen(id: string) {
+  const g = GAME_BY_ID[id];
+  const page = shell("spielen", g.title, minigameDetailHtml(g, mgBests?.get(id)), { back: "minigames" });
+  const fill = async () => {
+    const boardEl = page.querySelector<HTMLElement>("#mg-board")!;
+    try {
+      const b = await getMinigameBoard(id, 50);
+      if (!boardEl.isConnected) return;
+      boardEl.innerHTML = minigameBoardHtml(b);
+      boardEl.querySelectorAll<HTMLElement>("[data-player]").forEach((el) => el.addEventListener("click", () => openPlayer(el.dataset.player!)));
+    } catch (e) {
+      if (boardEl.isConnected) boardEl.innerHTML = `<div class="inline-error" role="alert">${esc(errMsg(e))}</div>`;
+    }
+  };
+  void fill();
+  void loadMgBests().then((b) => {
+    const best = b?.get(id);
+    const stats = page.querySelector(".mg-stats");
+    if (stats?.isConnected && best) stats.outerHTML = minigameDetailHtml(g, best).match(/<section class="mg-stats"[\s\S]*?<\/section>/)![0];
+  });
+}
+
+/** Ergebnis eines Laufs, das noch an den Server muss (für „Nochmal senden“) */
+let mgPending: { runId: string; game: string; stage: number; totalMs: number; steps: { ok: boolean; ms: number }[]; view: MgResultView } | null = null;
+let mgLast: { game: string; stage: number } | null = null;
+
+async function startMinigame(id: string) {
+  const g = GAME_BY_ID[id];
+  if (!g) return;
+  clearTimers();
+  sfx.unlock();
+  aborted = false;
+  navAbort = false;
+  running = true;
+  const prevBest = mgBests?.get(id)?.best_stage ?? 0;
+  app.innerHTML = minigameRunHtml(g, prevBest);
+  const holder = document.getElementById("holder")!;
+
+  // Lauf beim Server anmelden (liefert den Seed). Ohne Netz wird trotzdem gespielt, aber nicht gewertet.
+  const runP = startMinigameRun(id).catch((e: unknown) => e);
+  await startCard(holder, g, () => aborted, () => sfx.tick());
+  const run = await runP;
+  const runId = run && typeof run === "object" && "run_id" in run ? (run as { run_id: string; seed: number }) : null;
+  const seed = runId?.seed ?? (Math.random() * 2 ** 31) >>> 0;
+
+  const steps: { ok: boolean; ms: number }[] = [];
+  let stage = 0;
+  let totalMs = 0;
+  let recordShown = false;
+  for (let n = 1; !aborted; n++) {
+    document.getElementById("mg-stage")!.textContent = String(n);
+    const spec: RoundSpec = { gameId: id, seed: hashStr(`${seed}:mg:${n}`), level: 0, stage: n };
+    const r = await playRound(holder, spec);
+    if (aborted) break;
+    const ms = Math.max(0, Math.round(r.elapsed));
+    if (!r.ok) {
+      steps.push({ ok: false, ms });
+      sfx.bad();
+      shake(holder);
+      (holder.firstElementChild as HTMLElement | null)?.classList.add("done-fail");
+      floatText(holder, r.reason || "Vorbei!", "fail");
+      await sleep(1000);
+      break;
+    }
+    steps.push({ ok: true, ms });
+    totalMs += ms;
+    stage = n;
+    (holder.firstElementChild as HTMLElement | null)?.classList.add("done-ok");
+    sfx.good(90);
+    const record = stage > prevBest && !recordShown && prevBest > 0;
+    if (record) {
+      recordShown = true;
+      document.getElementById("mg-best")?.classList.add("beaten");
+    }
+    if (stage > prevBest) {
+      const b = document.getElementById("mg-best");
+      if (b) b.innerHTML = `Rekord<b>${stage}</b>`;
+    }
+    await stageClear(holder, n, record);
+  }
+  running = false;
+  const leftByNav = navAbort;
+  navAbort = false;
+  aborted = false;
+  mgLast = { game: id, stage };
+
+  const view: MgResultView = { game: g, stage, totalMs, record: stage > prevBest, prevBest, rank: null, totalPlayers: null, saving: Boolean(runId) };
+  if (!runId) {
+    view.error = "Keine Verbindung beim Start – dieser Lauf zählt nicht für die Rangliste.";
+    view.saving = false;
+  }
+  if (!leftByNav) showMinigameResult(view);
+  else renderRoute();
+  if (!runId) return;
+  mgPending = { runId: runId.run_id, game: id, stage, totalMs, steps, view };
+  await submitMinigame(!leftByNav);
+}
+
+function showMinigameResult(v: MgResultView) {
+  clearTimers();
+  app.innerHTML = minigameResultHtml(v);
+  if (!v.saving && v.record && v.stage > 0) {
+    sfx.win();
+    confetti();
+  }
+}
+
+async function submitMinigame(show = true) {
+  const p = mgPending;
+  if (!p) return;
+  try {
+    const res = await finishMinigameRun(p.runId, p.stage, p.totalMs, p.steps);
+    mgPending = null;
+    const best: MinigameBest = { game: p.game, best_stage: res.best_stage, best_ms: res.best_ms, plays: res.plays, rank: res.rank };
+    (mgBests ??= new Map()).set(p.game, best);
+    if (show && app.querySelector(".mg-result")) {
+      showMinigameResult({ ...p.view, record: res.is_record, rank: res.rank, totalPlayers: res.total_players, saving: false, error: undefined });
+    }
+  } catch (e) {
+    const fatal = e instanceof SocialError && e.code !== "network";
+    if (fatal) mgPending = null;
+    if (show && app.querySelector(".mg-result")) showMinigameResult({ ...p.view, saving: false, error: errMsg(e), canRetry: !fatal });
+  }
 }
 
 // ---------- Aktionen ----------
@@ -856,9 +1149,41 @@ app.addEventListener("click", async (e) => {
   if (act !== "quit") sfx.tap();
   const t = today();
   switch (act) {
+    case "go":
+      return navigate(btn.dataset.to || "start");
     case "daily":
-      if (S.daily[t]) return home();
+      if (S.daily[t]) return navigate("start");
       return startRun("daily");
+    case "tmode":
+      return navigate("pfad");
+    case "mgplay":
+      return void startMinigame(btn.dataset.game!);
+    case "mgquit":
+      aborted = true;
+      return;
+    case "mgback":
+      return navigate(`minigames/${mgLast?.game ?? ""}`);
+    case "mgoverview":
+      return navigate("minigames");
+    case "mgboard":
+      return navigate(`ranglisten/minigames/${btn.dataset.game}`);
+    case "mgretry":
+      return void submitMinigame();
+    case "mgshare": {
+      const g = GAME_BY_ID[btn.dataset.game!];
+      if (!g) return;
+      let link = publicBase();
+      try {
+        const u = new URL(publicBase());
+        u.search = "";
+        u.hash = `#/minigames/${g.id}`;
+        link = u.toString();
+      } catch {
+        /* Basis-Adresse benutzen */
+      }
+      await doShare(minigameShareText(g, mgLast?.game === g.id ? mgLast.stage : 0, link));
+      return;
+    }
     case "duel":
       if (pending) acceptChallenge(pending);
       return;
@@ -867,26 +1192,24 @@ app.addEventListener("click", async (e) => {
     case "endless":
       return startRun("endless");
     case "board":
-      return board("crew");
+      return navigate("ranglisten/crew");
     case "path":
-      return openPath();
+      return navigate("pfad");
     case "friends":
-      return openFriends();
+      return navigate("freunde");
     case "tquit":
       return confirmTrophyQuit();
     case "tab-crew":
-      return board("crew");
+      return navigate("ranglisten/crew");
     case "tab-world":
-      return board("world");
+      return navigate("ranglisten/welt");
     case "home":
-      return home();
+      return navigate("start");
     case "quit":
       aborted = true;
       return;
-    case "settings":
-      return settings();
     case "profile":
-      return openProfile();
+      return navigate("profil");
     case "sound":
       S.muted = !S.muted;
       sfx.setMuted(S.muted);
@@ -941,10 +1264,10 @@ app.addEventListener("click", async (e) => {
         addCrewResult(S, p.i, p.n, p.d!, { score: sumPoints(p.r), rounds: p.r });
         save();
         toast(`${p.n} ist jetzt in deiner Crew`);
-        return board("crew");
+        return navigate("ranglisten/crew");
       }
       pending = p;
-      return home();
+      return navigate("start");
     }
   }
 });
@@ -979,27 +1302,6 @@ onProfileChange((p) => {
   const el = document.getElementById("trophy-count");
   if (el) el.textContent = p ? formatTrophies(p.trophies) : "–";
 });
-
-// Profilbild oben im Hauptmenü aktuell halten
-onAvatarChange((a) => {
-  const btn = document.querySelector<HTMLElement>('[data-act="profile"]');
-  if (btn) btn.innerHTML = avatarHtml(myProfile?.username || S.name, a, "top-avatar");
-});
-
-function openProfile() {
-  const uid = currentUser()?.id;
-  const p = myProfile ?? cachedProfile(uid);
-  openMyProfile({
-    email: currentUser()?.email ?? "",
-    initial: p ? { ...p, avatar: cachedAvatar(uid) } : null,
-    onAvatar: (a) => setCachedAvatar(currentUser()?.id, a),
-    onRename: (then) => askName(then),
-    onSignOut: async () => {
-      await signOut();
-      toast("Du bist abgemeldet 👋");
-    },
-  });
-}
 
 async function loadProfile(): Promise<MyProfile | null> {
   try {
@@ -1038,9 +1340,9 @@ async function openPath() {
   clearTimers();
   const uid = currentUser()?.id;
   const handlers = {
-    onBack: () => home(),
+    onBack: () => navigate(lastRoute || "start"),
     onPlay: () => void startTrophyRun(),
-    onBoard: () => void board("world"),
+    onBoard: () => navigate("ranglisten/welt"),
     onSetName: () => askName(() => void openPath()),
   };
   renderPath(app, myProfile ?? cachedProfile(uid), {}, handlers);
@@ -1052,16 +1354,6 @@ async function openPath() {
     error = errMsg(e);
   }
   if (app.querySelector(".path-screen")) renderPath(app, p ?? myProfile, { error }, handlers);
-}
-
-function openFriends() {
-  clearTimers();
-  renderFriends(app, {
-    onBack: () => home(),
-    hasName: () => Boolean(myProfile?.username),
-    askName: (then) => askName(then),
-  });
-  if (!myProfile) void loadProfile().then(() => app.querySelector(".friends") && !myProfile?.username && openFriends());
 }
 
 function confirmTrophyQuit() {
@@ -1105,6 +1397,7 @@ async function startTrophyRun() {
   clearTimers();
   sfx.unlock();
   aborted = false;
+  navAbort = false;
 
   let start: RoundStart;
   try {
@@ -1115,6 +1408,7 @@ async function startTrophyRun() {
     return;
   }
   const startedAt = performance.now();
+  running = true;
 
   // 15 Aufgaben aus ALLEN registrierten Minispielen: jedes kommt vor, bevor sich eines wiederholt,
   // nie zweimal dasselbe direkt hintereinander. Schwierigkeit nach Trophäenstand.
@@ -1146,6 +1440,8 @@ async function startTrophyRun() {
     await trophyFeedback(holder, r.ok && !r.timeout, step, r.reason);
   }
 
+  running = false;
+  navAbort = false;
   // Abgebrochen: Rest zählt als falsch
   while (tasks.length < TROPHY_TASKS) {
     tasks.push({ game: specs[tasks.length].gameId, ok: false, timeout: true, tier: 0, ms: 0 });
@@ -1181,9 +1477,9 @@ async function trophyFeedback(holder: HTMLElement, ok: boolean, step: { delta: n
 function trophyResultHandlers() {
   return {
     again: () => void startTrophyRun(),
-    path: () => void openPath(),
-    board: () => void board("world"),
-    home: () => home(),
+    path: () => navigate("pfad"),
+    board: () => navigate("ranglisten/welt"),
+    home: () => navigate("start"),
     retry: () => void submitTrophyRun(),
   };
 }
@@ -1243,7 +1539,7 @@ function showStart() {
     bannerIcon: pending ? undefined : "👤",
     bannerSub: pending ? undefined : "Melde dich an, um das Profil zu sehen.",
     onSignedIn: (fresh) => {
-      home();
+      renderRoute();
       void loadProfile();
       openPendingProfile();
       toast(fresh ? "Account erstellt – viel Spaß! 🎉" : "Angemeldet ✌️");
@@ -1256,6 +1552,9 @@ onAuthChange((s) => {
   if (!s) {
     setCachedProfile(undefined, null);
     setCachedAvatar(undefined, null);
+    mgBests = null;
+    // Nach dem Abmelden startet die nächste Anmeldung wieder auf „Start“
+    if (location.hash) replaceRoute("start");
     showStart();
   }
 });
@@ -1264,7 +1563,7 @@ async function boot() {
   app.innerHTML = `<div class="screen boot" aria-busy="true"><h1 class="logo" aria-label="ZWIP"><span>Z</span><span>W</span><span>I</span><span>P</span></h1></div>`;
   const s = await restoreSession();
   if (s) {
-    home();
+    renderRoute();
     void loadProfile();
     openPendingProfile();
   } else showStart();

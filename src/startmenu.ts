@@ -22,7 +22,7 @@ export function renderStart(app: HTMLElement, hooks: StartMenuHooks) {
   <div class="screen start">
     <div class="start-hero">
       ${LOGO}
-      <p class="tagline">10 Blitz-Challenges · 30 Sekunden · jeden Tag neu</p>
+      <p class="tagline">10 Blitz-Challenges · jeden Tag neu</p>
     </div>
     ${hooks.banner ? `<div class="duel-card pop-in"><div class="duel-ico">${hooks.bannerIcon ?? "⚔️"}</div><div>${hooks.banner}<br><span class="muted">${hooks.bannerSub ?? "Melde dich an, um anzutreten."}</span></div></div>` : ""}
     <div class="start-actions">

@@ -4,6 +4,8 @@ import { makeRng, dayIndex, daySeed, dateOfDay } from "../src/rng";
 import { buildRounds, endlessRound, roundPoints, tileOf, GAME_IDS, CLASSIC_IDS, ROUNDS, idsForDay, NEW_GAMES_FROM_DAY } from "../src/run";
 import { freshState, recordDaily, currentStreak, addCrewResult } from "../src/state";
 import { profileLink, avatarHtml, memberSince } from "../src/profileKit";
+import { routeParts, tabFor } from "../src/nav";
+import { fmtMs } from "../src/minigameUi";
 import { encodeChallenge, decodeChallenge, extractChallengeCode, gridText, shareText, buildLink } from "../src/share";
 
 test("gleicher Seed → gleiche Zahlenfolge", () => {
@@ -195,12 +197,92 @@ test("Speed-Stufen und Registry: jedes Minispiel hat Vorbereitung + Tempo-Grenze
   for (const id of ["wait", "beat", "memory"]) assert.equal(GAMES.find((g) => g.id === id)!.prep, 0);
 });
 
-test("Jedes Minispiel wird beim ersten Mal mindestens 10 Sekunden erklärt", () => {
-  assert.ok(EXPLAIN_MS >= 10_000, `EXPLAIN_MS = ${EXPLAIN_MS}`);
+test("Erklärkarte in den gemischten Modi dauert genau 4 Sekunden", () => {
+  assert.equal(EXPLAIN_MS, 4000);
   for (const g of GAMES) {
     assert.ok(g.howto.length >= 60, `${g.id}: Erklärung zu kurz`);
     assert.ok(!/[<>]/.test(g.howto), `${g.id}: kein HTML in der Erklärung`);
   }
+});
+
+test("Minigame-Stufen: gültig, werden nie leichter und bleiben in sinnvollen Grenzen (Stufe 1–60)", () => {
+  for (const g of GAMES) {
+    assert.ok(g.progressionText.length >= 3, `${g.id}: mind. 3 Stichpunkte „So wird's schwerer“`);
+    const keys = Object.keys(g.monotone);
+    assert.ok(keys.length >= 2, `${g.id}: Kennzahlen für die Progression`);
+    let prev = g.stage(1);
+    for (let n = 1; n <= 60; n++) {
+      const p = g.stage(n);
+      for (const [k, v] of Object.entries(p)) assert.ok(Number.isFinite(v), `${g.id}@${n}: ${k} = ${v}`);
+      for (const k of keys) {
+        const dir = g.monotone[k];
+        assert.ok(dir === 1 ? p[k] >= prev[k] : p[k] <= prev[k], `${g.id}@${n}: ${k} wird leichter (${prev[k]} → ${p[k]})`);
+      }
+      prev = p;
+    }
+    // Stufe 1 ist wirklich leichter als Stufe 25 (irgendetwas ändert sich)
+    const a = g.stage(1),
+      b = g.stage(25);
+    assert.ok(keys.some((k) => a[k] !== b[k]), `${g.id}: Stufe 25 ist schwerer als Stufe 1`);
+  }
+});
+
+test("Minigame-Stufen: konkrete Vorgaben", () => {
+  const G = Object.fromEntries(GAMES.map((g) => [g.id, g]));
+  // Memory wie vorgegeben
+  assert.deepEqual(G.memory.stage(1), { side: 3, length: 3, on: 600, gap: 200 });
+  assert.equal(G.memory.stage(4).side, 3);
+  assert.equal(G.memory.stage(5).side, 4);
+  assert.equal(G.memory.stage(10).side, 5);
+  assert.equal(G.memory.stage(5).length, 7);
+  assert.equal(G.memory.stage(60).on, 300);
+  assert.equal(G.memory.stage(60).gap, 120);
+  // Grenzen, damit es nie unmöglich wird
+  assert.equal(G.odd.stage(200).side, 8);
+  assert.equal(G.odd.stage(200).diff, 4);
+  assert.equal(G.wait.stage(200).maxReaction, 380);
+  assert.equal(G.wait.stage(5).fakes, 0);
+  assert.ok(G.wait.stage(6).fakes >= 1);
+  assert.equal(G.stop.stage(7).reverse, 0);
+  assert.equal(G.stop.stage(8).reverse, 1);
+  assert.equal(G.stop.stage(12).jump, 1);
+  assert.equal(G.stop.stage(200).width, 7);
+  assert.equal(G.more.stage(13).fields, 2);
+  assert.equal(G.more.stage(14).fields, 3);
+  assert.equal(G.more.stage(200).diffPct, 6);
+  assert.equal(G.pop.stage(1).bubbles, 4);
+  assert.equal(G.pop.stage(200).bubbles, 16);
+  assert.equal(G.pop.stage(10).red, 0);
+  assert.equal(G.pop.stage(11).red, 1);
+  assert.deepEqual([4, 5, 9, 13].map((n) => G.sum.stage(n).tier), [1, 2, 3, 4]);
+  assert.equal(G.ink.stage(200).colors, 6);
+  assert.equal(G.ink.stage(200).limit, 1800);
+  assert.deepEqual([1, 7, 8, 14].map((n) => G.swipe.stage(n).arrows), [1, 1, 2, 3]);
+  assert.equal(G.swipe.stage(200).msPerArrow, 1100);
+  assert.equal(G.find.stage(200).count, 48);
+  assert.equal(G.beat.stage(200).bpm, 180);
+  assert.equal(G.beat.stage(200).window, 70);
+  assert.equal(G.beat.stage(10).lead, 4);
+  assert.deepEqual([1, 4, 9].map((n) => G.pattern.stage(n).period), [2, 3, 4]);
+  assert.equal(G.pattern.stage(12).options, 4);
+  // Ungültige Eingaben werden zu Stufe 1
+  assert.deepEqual(G.odd.stage(0), G.odd.stage(1));
+  assert.deepEqual(G.odd.stage(Number.NaN), G.odd.stage(1));
+});
+
+test("Navigation: Routen und Tabs", () => {
+  assert.deepEqual(routeParts(""), ["start"]);
+  assert.deepEqual(routeParts("#/minigames/memory"), ["minigames", "memory"]);
+  assert.deepEqual(routeParts("#minigames"), ["minigames"]);
+  assert.equal(tabFor(["minigames", "odd"]), "spielen");
+  assert.equal(tabFor(["ranglisten", "welt"]), "ranglisten");
+  assert.equal(tabFor(["pfad"]), null);
+  assert.equal(tabFor(["quatsch"]), "start");
+});
+
+test("Minigame-Zeitformat", () => {
+  assert.equal(fmtMs(12345), "12,3 s");
+  assert.equal(fmtMs(0), "0,0 s");
 });
 
 test("Profil-Link und Profilbild-Anzeige", () => {

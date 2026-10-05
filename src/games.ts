@@ -1,5 +1,11 @@
-// Die Mini-Challenges. Jede ist in unter 1 Sekunde verstanden und dauert max. ~3 Sekunden.
-// Neue Challenges = neues Objekt in GAMES. Mehr braucht es nicht.
+// Die Mini-Challenges.
+//
+// Jedes Spiel läuft in zwei Varianten:
+//   * Gemischte Modi (Daily, Training, Endlos, Trophäen, Duell): Schwierigkeit `level` 0..1.
+//     Dieser Weg verbraucht den Zufall exakt wie vorher, damit Dailies und Duelle für alle gleich bleiben.
+//   * Minigames (Stufen-Lauf): `stage` 1, 2, 3 … Die Werte für jede Stufe liefert `stage(n)`.
+//     Sie werden monoton schwerer und haben feste Grenzen, damit es nie unmöglich wird.
+// Neue Challenges = neues Objekt in GAMES.
 
 import type { Rng } from "./rng";
 import type { Sfx } from "./sound";
@@ -16,8 +22,10 @@ export interface Outcome {
 export interface Ctx {
   el: HTMLElement;
   rng: Rng;
-  /** 0 = leicht, 1 = schwer */
+  /** 0 = leicht, 1 = schwer (gemischte Modi) */
   level: number;
+  /** Stufe im Minigame-Lauf (1, 2, 3 …). Gesetzt = die Stufen-Werte gelten. */
+  stage?: number;
   finish: (o: Outcome) => void;
   sfx: Sfx;
   /** Nur für automatische Tests – im echten Spiel ein No-op */
@@ -30,14 +38,17 @@ export interface Mounted {
   hideTimer?: boolean;
 }
 
-/** So lange (ms) wird ein Minispiel beim ersten Mal erklärt, bevor es losgeht. */
-export const EXPLAIN_MS = 10_000;
+/** So lange (ms) wird ein Minispiel in den gemischten Modi vor jeder Aufgabe erklärt. */
+export const EXPLAIN_MS = 4_000;
+
+/** Kennzahlen einer Stufe (nur Zahlen, damit sie sich vergleichen und testen lassen). */
+export type StageParams = Record<string, number>;
 
 export interface MicroGame {
   id: string;
   title: string;
   hint: string;
-  /** Ausführliche Erklärung (2–3 kurze Sätze), wird beim ersten Mal mindestens EXPLAIN_MS lang gezeigt. */
+  /** Ausführliche Erklärung (2–3 kurze Sätze) */
   howto: string;
   emoji: string;
   bg: string;
@@ -49,10 +60,21 @@ export interface MicroGame {
   prep: number;
   /** Grenzen für den Trophäen-Tempobonus (ms ab Ende der Vorbereitung bzw. vom Spiel gemeldete ms). */
   speed: { veryFast: number; fast: number };
+  /** Werte für Stufe n (1, 2, 3 …) im Minigame-Modus */
+  stage(n: number): StageParams;
+  /**
+   * Richtung jeder Kennzahl über die Stufen: +1 = darf nur steigen, −1 = darf nur sinken.
+   * (Für die Tests: So wird geprüft, dass es nie leichter wird.)
+   */
+  monotone: Record<string, 1 | -1>;
+  /** „So wird's schwerer" – Stichpunkte für die Minigame-Detailseite */
+  progressionText: string[];
   mount(ctx: Ctx): Mounted;
 }
 
 const lerp = (a: number, b: number, t: number) => a + (b - a) * Math.max(0, Math.min(1, t));
+/** Stufe sicher als ganze Zahl ≥ 1 */
+const st = (n: number) => Math.max(1, Math.floor(n) || 1);
 
 function h<K extends keyof HTMLElementTagNameMap>(tag: K, cls = "", text = ""): HTMLElementTagNameMap[K] {
   const e = document.createElement(tag);
@@ -88,7 +110,9 @@ function scatter(rng: Rng, count: number, cols: number, rows: number, pad = 8) {
 
 export const PALETTE = ["#ff3d8b", "#3d7bff", "#2fd17a", "#ffd23d", "#ff8a3d", "#a45cff", "#25d9e8"];
 
+// =====================================================================
 // 1) Finde das eine Feld, das anders aussieht
+// =====================================================================
 const odd: MicroGame = {
   id: "odd",
   title: "Finde den Anderen",
@@ -98,22 +122,34 @@ const odd: MicroGame = {
   bg: "linear-gradient(160deg,#6a2cff,#b83dff)",
   prep: 1200,
   speed: { veryFast: 900, fast: 1700 },
-  mount({ el, rng, level, finish, expose }) {
-    const n = level < 0.3 ? 3 : level < 0.7 ? 4 : 5;
+  stage: (n) => {
+    n = st(n);
+    return {
+      side: Math.min(8, 3 + Math.floor((n - 1) / 3)),
+      diff: Math.max(4, 24 - (n - 1)),
+      limit: Math.max(2500, 3800 - (n - 1) * 65),
+    };
+  },
+  monotone: { side: 1, diff: -1, limit: -1 },
+  progressionText: ["Mehr Felder: von 3×3 bis 8×8", "Der Farbunterschied wird immer kleiner", "Weniger Zeit pro Stufe"],
+  mount({ el, rng, level, stage, finish, expose }) {
+    const P = stage ? odd.stage(stage) : null;
+    const n = P ? P.side : level < 0.3 ? 3 : level < 0.7 ? 4 : 5;
     const hue = rng.int(0, 359);
     const sat = rng.int(72, 92);
     const L = rng.int(50, 60);
-    const d = Math.round(lerp(22, 9, level));
+    const d = P ? P.diff : Math.round(lerp(22, 9, level));
     const dir = rng.bool() ? 1 : -1;
     const oddIdx = rng.int(0, n * n - 1);
     const grid = h("div", "odd-grid");
     grid.style.setProperty("--n", String(n));
+    if (n >= 6) grid.classList.add("dense");
     const tiles: HTMLElement[] = [];
     for (let i = 0; i < n * n; i++) {
       const t = h("button", "odd-tile");
       t.setAttribute("aria-label", "Feld");
       t.style.background = `hsl(${hue} ${sat}% ${i === oddIdx ? L + dir * d : L}%)`;
-      t.style.animationDelay = `${i * 12}ms`;
+      t.style.animationDelay = `${i * (n > 5 ? 5 : 12)}ms`;
       onPress(t, () => {
         if (i === oddIdx) {
           t.classList.add("hit");
@@ -129,11 +165,13 @@ const odd: MicroGame = {
     }
     el.append(grid);
     expose({ target: tiles[oddIdx] });
-    return { limit: 3800 };
+    return { limit: P ? P.limit : 3800 };
   },
 };
 
+// =====================================================================
 // 2) Stoppe die Nadel im Feld
+// =====================================================================
 const stop: MicroGame = {
   id: "stop",
   title: "Stopp im Feld",
@@ -143,7 +181,20 @@ const stop: MicroGame = {
   bg: "linear-gradient(160deg,#ff3d6e,#ff8a3d)",
   prep: 1000,
   speed: { veryFast: 250, fast: 550 },
-  mount({ el, rng, level, finish, expose }) {
+  stage: (n) => {
+    n = st(n);
+    return {
+      // Zeit für einmal hin und zurück: pro Stufe 6 % schneller, nie unter 420 ms
+      period: Math.max(420, Math.round(1500 / Math.pow(1.06, n - 1))),
+      width: Math.max(7, Math.round((22 - (n - 1) * 0.8) * 10) / 10),
+      reverse: n >= 8 ? 1 : 0,
+      jump: n >= 12 ? 1 : 0,
+    };
+  },
+  monotone: { period: -1, width: -1, reverse: 1, jump: 1 },
+  progressionText: ["Der Strich wird mit jeder Stufe schneller", "Das grüne Feld wird schmaler", "Ab Stufe 8 dreht der Strich plötzlich um", "Ab Stufe 12 springt das Feld nach jedem Durchlauf"],
+  mount({ el, rng, level, stage, finish, expose }) {
+    if (stage) return mountStopStage({ el, rng, finish, expose }, stop.stage(stage));
     const width = lerp(30, 13, level);
     const zoneStart = rng.int(6, Math.floor(94 - width));
     const period = lerp(1500, 820, level);
@@ -186,7 +237,84 @@ const stop: MicroGame = {
   },
 };
 
+/** Stopp im Feld als Stufe: Strich mit echter Geschwindigkeit, optional Richtungswechsel und springendes Feld. */
+function mountStopStage(
+  { el, rng, finish, expose }: Pick<Ctx, "el" | "rng" | "finish" | "expose">,
+  P: StageParams,
+): Mounted {
+  const width = P.width;
+  let zoneStart = rng.int(6, Math.floor(94 - width));
+  const wrap = h("div", "stop-wrap");
+  const bar = h("div", "stop-bar");
+  const zone = h("div", "stop-zone");
+  const needle = h("div", "stop-needle");
+  const place = () => {
+    zone.style.left = `${zoneStart}%`;
+    zone.style.width = `${width}%`;
+  };
+  place();
+  bar.append(zone, needle);
+  wrap.append(bar, h("div", "big-hint", "TIPP!"));
+  el.append(wrap);
+  const speed = 200 / P.period; // % pro ms
+  let pos = rng.int(0, 100);
+  let dir = rng.bool() ? 1 : -1;
+  let nextFlip = P.reverse ? rng.int(450, 1100) : Infinity;
+  let last = performance.now();
+  let elapsed = 0;
+  let raf = 0;
+  const loop = (now: number) => {
+    const dt = Math.min(50, now - last);
+    last = now;
+    elapsed += dt;
+    pos += dir * speed * dt;
+    let bounced = false;
+    if (pos >= 100) {
+      pos = 200 - pos;
+      dir = -1;
+      bounced = true;
+    } else if (pos <= 0) {
+      pos = -pos;
+      dir = 1;
+      bounced = true;
+    }
+    if (elapsed >= nextFlip) {
+      dir = -dir;
+      nextFlip = elapsed + rng.int(450, 1100);
+    }
+    if (bounced && P.jump) {
+      zoneStart = rng.int(6, Math.floor(94 - width));
+      place();
+      zone.classList.remove("jump");
+      void zone.offsetWidth;
+      zone.classList.add("jump");
+    }
+    needle.style.left = `${pos}%`;
+    raf = requestAnimationFrame(loop);
+  };
+  needle.style.left = `${pos}%`;
+  raf = requestAnimationFrame(loop);
+  const inZone = () => pos >= zoneStart && pos <= zoneStart + width;
+  onPress(el, () => {
+    cancelAnimationFrame(raf);
+    if (inZone()) {
+      const center = zoneStart + width / 2;
+      const rating = Math.max(0, 1 - Math.abs(pos - center) / (width / 2));
+      zone.classList.add("hit");
+      finish({ ok: true, rating: 0.35 + rating * 0.65, ms: Math.round((1 - rating) * 1000) });
+    } else {
+      needle.classList.add("miss");
+      finish({ ok: false, reason: "Knapp daneben!" });
+    }
+  });
+  expose({ inZone });
+  // Genug Zeit für gut zwei Durchläufe (bei Richtungswechseln etwas mehr)
+  return { limit: Math.round(P.period * (P.reverse ? 3.4 : 2.6) + 500), cleanup: () => cancelAnimationFrame(raf) };
+}
+
+// =====================================================================
 // 3) Reaktionstest: erst bei Grün tippen
+// =====================================================================
 const wait: MicroGame = {
   id: "wait",
   title: "Warte auf Grün",
@@ -196,7 +324,18 @@ const wait: MicroGame = {
   bg: "#1c1530",
   prep: 0,
   speed: { veryFast: 300, fast: 420 },
-  mount({ el, rng, finish, sfx, expose }) {
+  stage: (n) => {
+    n = st(n);
+    return {
+      maxReaction: Math.max(380, 700 - (n - 1) * 20),
+      // Höchstzahl gelber Fake-Signale vor dem echten Grün
+      fakes: n < 6 ? 0 : Math.min(4, 1 + Math.floor((n - 6) / 4)),
+    };
+  },
+  monotone: { maxReaction: -1, fakes: 1 },
+  progressionText: ["Du musst immer schneller reagieren (bis 0,38 s)", "Die Wartezeit ist jedes Mal anders", "Ab Stufe 6 blinkt es gelb – nicht drauf reinfallen!", "Später kommen mehrere Fake-Signale hintereinander"],
+  mount({ el, rng, stage, finish, sfx, expose }) {
+    if (stage) return mountWaitStage({ el, rng, finish, sfx, expose }, wait.stage(stage));
     const delay = rng.int(900, 2300);
     const box = h("div", "wait-box red");
     const label = h("div", "wait-label", "Warte…");
@@ -226,7 +365,67 @@ const wait: MicroGame = {
   },
 };
 
+function mountWaitStage({ el, rng, finish, sfx, expose }: Pick<Ctx, "el" | "rng" | "finish" | "sfx" | "expose">, P: StageParams): Mounted {
+  const delay = rng.int(1000, 4000);
+  const fakeCount = P.fakes ? rng.int(Math.max(0, P.fakes - 1), P.fakes) : 0;
+  // Fake-Signale zufällig vor dem echten Grün verteilen (mit Abstand)
+  const fakeAt: number[] = [];
+  for (let i = 0; i < fakeCount; i++) fakeAt.push(rng.int(350, Math.max(400, delay - 450)));
+  fakeAt.sort((a, b) => a - b);
+  const box = h("div", "wait-box red");
+  const label = h("div", "wait-label", "Warte…");
+  const limitTag = h("div", "wait-limit", `Grenze: ${(P.maxReaction / 1000).toLocaleString("de-DE")} s`);
+  box.append(label, limitTag);
+  el.append(box);
+  let goAt: number | null = null;
+  const timers: number[] = [];
+  fakeAt.forEach((t) => {
+    timers.push(
+      window.setTimeout(() => {
+        if (goAt !== null) return;
+        box.classList.add("fake");
+        label.textContent = "Noch nicht!";
+        timers.push(
+          window.setTimeout(() => {
+            box.classList.remove("fake");
+            if (goAt === null) label.textContent = "Warte…";
+          }, 260),
+        );
+      }, t),
+    );
+  });
+  timers.push(
+    window.setTimeout(() => {
+      goAt = performance.now();
+      box.classList.remove("fake");
+      box.classList.replace("red", "green");
+      label.textContent = "JETZT!";
+      sfx.go();
+    }, delay),
+  );
+  onPress(el, () => {
+    if (goAt === null) {
+      timers.forEach(clearTimeout);
+      box.classList.add("early");
+      label.textContent = "Zu früh!";
+      finish({ ok: false, reason: box.classList.contains("fake") ? "Das war Gelb! 🟡" : "Zu früh! 🫣" });
+      return;
+    }
+    const rt = performance.now() - goAt;
+    label.textContent = `${Math.round(rt)} ms`;
+    if (rt > P.maxReaction) {
+      finish({ ok: false, reason: `Zu langsam (${Math.round(rt)} ms)` });
+      return;
+    }
+    finish({ ok: true, rating: Math.max(0, Math.min(1, 1 - (rt - 200) / 500)), ms: Math.round(rt) });
+  });
+  expose({ isGo: () => goAt !== null });
+  return { limit: delay + P.maxReaction + 40, hideTimer: true, cleanup: () => timers.forEach(clearTimeout) };
+}
+
+// =====================================================================
 // 4) Welche Seite hat mehr Punkte?
+// =====================================================================
 const more: MicroGame = {
   id: "more",
   title: "Wo sind mehr?",
@@ -236,7 +435,22 @@ const more: MicroGame = {
   bg: "linear-gradient(160deg,#0fb39a,#25d9e8)",
   prep: 1300,
   speed: { veryFast: 800, fast: 1500 },
-  mount({ el, rng, level, finish, expose }) {
+  stage: (n) => {
+    n = st(n);
+    const fields = n >= 14 ? 3 : 2;
+    return {
+      // Unterschied der Punktzahlen in Prozent
+      diffPct: Math.max(6, Math.round((40 - (n - 1) * 2.6) * 10) / 10),
+      base: Math.min(fields === 3 ? 18 : 26, 6 + n),
+      mixedSizes: n >= 8 ? 1 : 0,
+      fields,
+    };
+  },
+  // base sinkt kurz beim Wechsel auf 3 Felder (weniger Platz) – dafür gibt es ein Feld mehr
+  monotone: { diffPct: -1, mixedSizes: 1, fields: 1 },
+  progressionText: ["Die Unterschiede werden immer knapper", "Es liegen immer mehr Punkte da", "Ab Stufe 8 sind die Punkte unterschiedlich groß", "Ab Stufe 14 drei Felder statt zwei"],
+  mount({ el, rng, level, stage, finish, expose }) {
+    if (stage) return mountMoreStage({ el, rng, finish, expose }, more.stage(stage));
     const base = rng.int(5, 10);
     const diff = Math.max(1, Math.round(lerp(4, 1, level) + rng.next() * 0.6));
     const moreLeft = rng.bool();
@@ -275,7 +489,54 @@ const more: MicroGame = {
   },
 };
 
+function mountMoreStage({ el, rng, finish, expose }: Pick<Ctx, "el" | "rng" | "finish" | "expose">, P: StageParams): Mounted {
+  const fields = P.fields;
+  const base = P.base + rng.int(0, 2);
+  const most = Math.max(base + 1, Math.round(base * (1 + P.diffPct / 100)));
+  const winner = rng.int(0, fields - 1);
+  // Andere Felder: knapp darunter (bei 3 Feldern liegt eins zwischendrin)
+  const counts = Array.from({ length: fields }, (_, i) => (i === winner ? most : base - (fields === 3 && i !== winner && rng.bool() ? 1 : 0)));
+  const cols = fields === 3 ? 3 : 4;
+  const rows = fields === 3 ? 8 : 7;
+  const dotSize = Math.max(12, 24 - Math.max(0, most - 8));
+  const wrap = h("div", `more-wrap${fields === 3 ? " three" : ""}`);
+  const sides: HTMLElement[] = [];
+  const names = fields === 3 ? ["Links", "Mitte", "Rechts"] : ["Links", "Rechts"];
+  counts.forEach((count, side) => {
+    const s = h("button", "more-side");
+    s.setAttribute("aria-label", names[side]);
+    const isMore = side === winner;
+    scatter(rng, Math.min(count, cols * rows), cols, rows, 8).forEach((p, i) => {
+      const d = h("span", "dot");
+      d.style.left = `${p.x}%`;
+      d.style.top = `${p.y}%`;
+      // Ab Stufe 8: gemischte Größen, die Felder mit weniger Punkten bekommen eher größere
+      const extra = P.mixedSizes ? rng.int(-5, isMore ? 3 : 9) : rng.int(-2, 2);
+      d.style.width = d.style.height = `${Math.max(8, dotSize + extra)}px`;
+      d.style.animationDelay = `${i * 10}ms`;
+      s.append(d);
+    });
+    onPress(s, () => {
+      if (isMore) {
+        s.classList.add("hit");
+        finish({ ok: true });
+      } else {
+        s.classList.add("miss");
+        sides[winner].classList.add("reveal");
+        finish({ ok: false, reason: counts.join(" vs ") });
+      }
+    });
+    sides.push(s);
+    wrap.append(s);
+  });
+  el.append(wrap);
+  expose({ target: sides[winner] });
+  return { limit: 3400 };
+}
+
+// =====================================================================
 // 5) Alle Blasen zerplatzen lassen
+// =====================================================================
 const pop: MicroGame = {
   id: "pop",
   title: "Alle zerplatzen",
@@ -285,7 +546,19 @@ const pop: MicroGame = {
   bg: "radial-gradient(120% 90% at 50% 0%,#4a2a7a,#1c1530)",
   prep: 900,
   speed: { veryFast: 1400, fast: 2300 },
-  mount({ el, rng, level, finish, sfx, expose }) {
+  stage: (n) => {
+    n = st(n);
+    return {
+      bubbles: Math.min(16, 3 + n),
+      msPerBubble: Math.max(360, 650 - (n - 1) * 15),
+      moving: n >= 6 ? 1 : 0,
+      red: n < 11 ? 0 : Math.min(4, 1 + Math.floor((n - 11) / 4)),
+    };
+  },
+  monotone: { bubbles: 1, msPerBubble: -1, moving: 1, red: 1 },
+  progressionText: ["Jede Stufe eine Blase mehr (bis 16)", "Weniger Zeit pro Blase", "Ab Stufe 6 bewegen sich die Blasen", "Ab Stufe 11 gibt es rote Blasen – NICHT antippen!"],
+  mount({ el, rng, level, stage, finish, sfx, expose }) {
+    if (stage) return mountPopStage({ el, rng, finish, sfx, expose }, pop.stage(stage));
     const k = 3 + Math.round(level * 3);
     let left = k;
     const field = h("div", "pop-field");
@@ -311,7 +584,45 @@ const pop: MicroGame = {
   },
 };
 
+function mountPopStage({ el, rng, finish, sfx, expose }: Pick<Ctx, "el" | "rng" | "finish" | "sfx" | "expose">, P: StageParams): Mounted {
+  const k = P.bubbles;
+  const total = k + P.red;
+  let left = k;
+  const field = h("div", "pop-field");
+  const bubbles: HTMLElement[] = [];
+  const size = (lo: number, hi: number) => rng.int(total > 12 ? lo - 16 : total > 8 ? lo - 8 : lo, total > 12 ? hi - 20 : total > 8 ? hi - 10 : hi);
+  const spots = scatter(rng, total, 4, 5, 10);
+  spots.forEach((p, i) => {
+    const bad = i >= k;
+    const b = h("button", bad ? "bubble bad" : "bubble");
+    b.setAttribute("aria-label", bad ? "Rote Blase – nicht antippen" : "Blase");
+    const s = size(66, 86);
+    const drift = P.moving ? `;--dx:${rng.int(-26, 26)}px;--dy:${rng.int(-22, 22)}px` : "";
+    b.style.cssText = `left:${p.x}%;top:${p.y}%;width:${s}px;height:${s}px;--c:${bad ? "#ff2d3d" : rng.pick(PALETTE)};animation-delay:${i * 30}ms,${rng.int(0, 600)}ms${drift}`;
+    if (P.moving) b.classList.add("drift");
+    onPress(b, () => {
+      if (b.classList.contains("popped")) return;
+      if (bad) {
+        b.classList.add("miss");
+        finish({ ok: false, reason: "Rote Blase! 🔴" });
+        return;
+      }
+      b.classList.add("popped");
+      sfx.pop(k - left);
+      left -= 1;
+      if (left === 0) finish({ ok: true });
+    });
+    bubbles.push(b);
+    field.append(b);
+  });
+  el.append(field);
+  expose({ targets: bubbles.slice(0, k) });
+  return { limit: 1200 + k * P.msPerBubble };
+}
+
+// =====================================================================
 // 6) Stimmt die Rechnung?
+// =====================================================================
 const sum: MicroGame = {
   id: "sum",
   title: "Stimmt das?",
@@ -321,31 +632,93 @@ const sum: MicroGame = {
   bg: "linear-gradient(160deg,#2f6bff,#6a2cff)",
   prep: 1500,
   speed: { veryFast: 1200, fast: 2100 },
-  mount({ el, rng, level, finish, expose }) {
-    const op = level < 0.35 ? "+" : rng.pick(["+", "−", "×"] as const);
+  stage: (n) => {
+    n = st(n);
+    return {
+      // 1 = kleines Plus, 2 = Plus/Minus bis 50, 3 = Mal, 4 = zwei Rechenschritte
+      tier: n <= 4 ? 1 : n <= 8 ? 2 : n <= 12 ? 3 : 4,
+      // So weit liegt ein falsches Ergebnis höchstens daneben
+      maxOff: Math.max(1, 10 - Math.floor((n - 1) / 2)),
+      limit: Math.max(2200, 3400 - (n - 1) * 60),
+    };
+  },
+  monotone: { tier: 1, maxOff: -1, limit: -1 },
+  progressionText: ["Stufe 1–4: kleine Plus-Aufgaben", "Stufe 5–8: Plus und Minus bis 50", "Stufe 9–12: Mal-Aufgaben, ab 13: zwei Rechenschritte", "Falsche Ergebnisse liegen immer knapper am richtigen"],
+  mount({ el, rng, level, stage, finish, expose }) {
     let a: number, b: number, real: number;
-    if (op === "+") {
-      a = rng.int(2, 9 + Math.round(level * 30));
-      b = rng.int(2, 9 + Math.round(level * 12));
-      real = a + b;
-    } else if (op === "−") {
-      a = rng.int(12, 40);
-      b = rng.int(3, a - 2);
-      real = a - b;
+    let text: string;
+    let truth: boolean;
+    let shown: number;
+    let limit = 3400;
+    if (stage) {
+      const P = sum.stage(stage);
+      limit = P.limit;
+      if (P.tier === 1) {
+        a = rng.int(2, 9 + stage);
+        b = rng.int(2, 9 + stage);
+        real = a + b;
+        text = `${a} + ${b}`;
+      } else if (P.tier === 2) {
+        if (rng.bool()) {
+          a = rng.int(8, 30);
+          b = rng.int(5, 50 - a);
+          real = a + b;
+          text = `${a} + ${b}`;
+        } else {
+          a = rng.int(15, 50);
+          b = rng.int(3, a - 2);
+          real = a - b;
+          text = `${a} − ${b}`;
+        }
+      } else if (P.tier === 3) {
+        a = rng.int(3, 9);
+        b = rng.int(3, 12);
+        real = a * b;
+        text = `${a} × ${b}`;
+      } else {
+        a = rng.int(2, 9);
+        b = rng.int(3, 9);
+        const c = rng.int(2, 15);
+        const plus = rng.bool();
+        real = plus ? a * b + c : a * b - c;
+        if (real < 0) real = a * b + c;
+        text = `${a} × ${b} ${real === a * b + c ? "+" : "−"} ${c}`;
+      }
+      truth = rng.bool();
+      shown = real;
+      if (!truth) {
+        const off = rng.int(1, P.maxOff);
+        shown = real + (rng.bool() ? off : -off);
+        if (shown < 0) shown = real + off;
+      }
     } else {
-      a = rng.int(2, 9);
-      b = rng.int(3, 9);
-      real = a * b;
-    }
-    const truth = rng.bool();
-    let shown = real;
-    if (!truth) {
-      const offs = op === "×" ? [-a, a, -1, 1, 10] : [-10, -2, -1, 1, 2, 10];
-      shown = real + rng.pick(offs);
-      if (shown < 0 || shown === real) shown = real + 1;
+      const op = level < 0.35 ? "+" : rng.pick(["+", "−", "×"] as const);
+      if (op === "+") {
+        a = rng.int(2, 9 + Math.round(level * 30));
+        b = rng.int(2, 9 + Math.round(level * 12));
+        real = a + b;
+      } else if (op === "−") {
+        a = rng.int(12, 40);
+        b = rng.int(3, a - 2);
+        real = a - b;
+      } else {
+        a = rng.int(2, 9);
+        b = rng.int(3, 9);
+        real = a * b;
+      }
+      text = `${a} ${op} ${b}`;
+      truth = rng.bool();
+      shown = real;
+      if (!truth) {
+        const offs = op === "×" ? [-a, a, -1, 1, 10] : [-10, -2, -1, 1, 2, 10];
+        shown = real + rng.pick(offs);
+        if (shown < 0 || shown === real) shown = real + 1;
+      }
     }
     const wrap = h("div", "sum-wrap");
-    wrap.append(h("div", "sum-eq", `${a} ${op} ${b} = ${shown}`));
+    const eq = h("div", "sum-eq", `${text} = ${shown}`);
+    if (text.length > 9) eq.classList.add("long");
+    wrap.append(eq);
     const row = h("div", "sum-row");
     const yes = h("button", "sum-btn yes", "✓");
     const no = h("button", "sum-btn no", "✗");
@@ -366,11 +739,13 @@ const sum: MicroGame = {
     wrap.append(row);
     el.append(wrap);
     expose({ target: truth ? yes : no });
-    return { limit: 3400 };
+    return { limit };
   },
 };
 
+// =====================================================================
 // 7) Farbe, nicht Wort (Stroop)
+// =====================================================================
 const INKS = [
   { n: "ROT", c: "#ff3d5a" },
   { n: "BLAU", c: "#3d7bff" },
@@ -378,6 +753,8 @@ const INKS = [
   { n: "GELB", c: "#ffc61a" },
   { n: "LILA", c: "#a45cff" },
 ] as const;
+/** Für die Minigame-Stufen: bis zu 6 gut unterscheidbare Farben */
+const INKS_STAGE = [...INKS, { n: "TÜRKIS", c: "#25d9e8" }] as const;
 
 const ink: MicroGame = {
   id: "ink",
@@ -388,18 +765,46 @@ const ink: MicroGame = {
   bg: "linear-gradient(160deg,#ffd23d,#ff8a3d)",
   prep: 1300,
   speed: { veryFast: 900, fast: 1600 },
-  mount({ el, rng, level, finish, expose }) {
-    const pool = rng.shuffle(INKS).slice(0, 4);
-    const inkColor = pool[0];
-    const word = level < 0.2 && rng.bool(0.3) ? inkColor : pool[rng.int(1, 3)];
+  stage: (n) => {
+    n = st(n);
+    return {
+      colors: Math.min(6, 3 + Math.floor((n - 1) / 3)),
+      limit: Math.max(1800, 3400 - (n - 1) * 80),
+      shuffle: n >= 10 ? 1 : 0,
+    };
+  },
+  monotone: { colors: 1, limit: -1, shuffle: 1 },
+  progressionText: ["Mehr Farben zur Auswahl: von 3 bis 6", "Immer weniger Zeit (bis 1,8 s)", "Ab Stufe 10 wechseln die Knöpfe jedes Mal den Platz"],
+  mount({ el, rng, level, stage, finish, expose }) {
+    let pool: readonly { n: string; c: string }[];
+    let inkColor: { n: string; c: string };
+    let word: { n: string; c: string };
+    let order: readonly { n: string; c: string }[];
+    let limit = 3400;
+    if (stage) {
+      const P = ink.stage(stage);
+      limit = P.limit;
+      // Feste Reihenfolge erleichtert die ersten Stufen, ab Stufe 10 wird gemischt
+      const chosen = rng.shuffle(INKS_STAGE).slice(0, P.colors);
+      pool = INKS_STAGE.filter((x) => chosen.includes(x));
+      inkColor = rng.pick(pool);
+      word = rng.pick(pool.filter((x) => x !== inkColor));
+      order = P.shuffle ? rng.shuffle(pool) : pool;
+    } else {
+      pool = rng.shuffle(INKS).slice(0, 4);
+      inkColor = pool[0];
+      word = level < 0.2 && rng.bool(0.3) ? inkColor : pool[rng.int(1, 3)];
+      order = rng.shuffle(pool);
+    }
     const wrap = h("div", "ink-wrap");
     const card = h("div", "ink-card");
     const w = h("div", "ink-word", word.n);
     w.style.color = inkColor.c;
     card.append(w);
     const row = h("div", "ink-row");
+    row.style.setProperty("--cols", String(order.length <= 4 ? order.length : 3));
     let target: HTMLElement | null = null;
-    rng.shuffle(pool).forEach((p) => {
+    order.forEach((p) => {
       const b = h("button", "ink-swatch");
       b.style.background = p.c;
       b.setAttribute("aria-label", p.n);
@@ -418,11 +823,13 @@ const ink: MicroGame = {
     wrap.append(card, row);
     el.append(wrap);
     expose({ target });
-    return { limit: 3400 };
+    return { limit };
   },
 };
 
+// =====================================================================
 // 8) Wisch in Pfeilrichtung (oder genau andersrum)
+// =====================================================================
 type Dir = "up" | "down" | "left" | "right";
 const OPP: Record<Dir, Dir> = { up: "down", down: "up", left: "right", right: "left" };
 const ROT: Record<Dir, number> = { right: 0, down: 90, left: 180, up: 270 };
@@ -436,23 +843,73 @@ const swipe: MicroGame = {
   bg: "linear-gradient(160deg,#22c36b,#0fb39a)",
   prep: 900,
   speed: { veryFast: 650, fast: 1200 },
-  mount({ el, rng, level, finish, expose }) {
-    const dir = rng.pick(["up", "down", "left", "right"] as const);
-    const invert = level > 0.3 && rng.bool(0.5);
-    const expected: Dir = invert ? OPP[dir] : dir;
+  stage: (n) => {
+    n = st(n);
+    return {
+      invert: n >= 3 ? 1 : 0,
+      arrows: n >= 14 ? 3 : n >= 8 ? 2 : 1,
+      msPerArrow: Math.max(1100, 2900 - (n - 1) * 90),
+    };
+  },
+  monotone: { invert: 1, arrows: 1, msPerArrow: -1 },
+  progressionText: ["Ab Stufe 3 kommt GEGENTEIL! dazu", "Ab Stufe 8 zwei Pfeile hintereinander", "Ab Stufe 14 sogar drei", "Pro Pfeil immer weniger Zeit"],
+  mount({ el, rng, level, stage, finish, expose }) {
+    let steps: { dir: Dir; invert: boolean }[];
+    let limit = 2900;
+    if (stage) {
+      const P = swipe.stage(stage);
+      steps = Array.from({ length: P.arrows }, () => {
+        const dir = rng.pick(["up", "down", "left", "right"] as const);
+        return { dir, invert: P.invert === 1 && rng.bool(0.5) };
+      });
+      limit = P.arrows * P.msPerArrow;
+    } else {
+      const dir = rng.pick(["up", "down", "left", "right"] as const);
+      steps = [{ dir, invert: level > 0.3 && rng.bool(0.5) }];
+    }
+    const expected = steps.map((s) => (s.invert ? OPP[s.dir] : s.dir));
+    let idx = 0;
     const wrap = h("div", "swipe-wrap");
-    if (invert) wrap.append(h("div", "swipe-flag", "GEGENTEIL!"));
-    const arrow = h("div", `swipe-arrow${invert ? " inv" : ""}`, "➜");
-    arrow.style.setProperty("--rot", `${ROT[dir]}deg`);
-    wrap.append(arrow);
+    const flag = h("div", "swipe-flag", "GEGENTEIL!");
+    const arrow = h("div", "swipe-arrow", "➜");
+    const dots = h("div", "swipe-dots");
+    const dotEls = steps.map(() => dots.appendChild(h("i")));
+    const show = () => {
+      const s = steps[idx];
+      flag.style.visibility = s.invert ? "visible" : "hidden";
+      arrow.className = `swipe-arrow${s.invert ? " inv" : ""}`;
+      arrow.style.setProperty("--rot", `${ROT[s.dir]}deg`);
+      dotEls.forEach((d, i) => d.classList.toggle("on", i < idx));
+      dotEls.forEach((d, i) => d.classList.toggle("now", i === idx));
+    };
+    if (steps.length === 1 && !steps[0].invert) flag.remove();
+    wrap.append(flag, arrow);
+    if (steps.length > 1) wrap.append(dots);
+    show();
     el.append(wrap);
     let sx = 0,
       sy = 0,
-      down = false;
+      down = false,
+      over = false;
     const judge = (d: Dir) => {
-      arrow.classList.add(d === expected ? "hit" : "miss");
-      if (d === expected) finish({ ok: true });
-      else finish({ ok: false, reason: invert ? "Gegenteil vergessen!" : "Falsche Richtung" });
+      if (over) return;
+      if (d === expected[idx]) {
+        idx += 1;
+        if (idx === steps.length) {
+          over = true;
+          arrow.classList.add("hit");
+          finish({ ok: true });
+        } else {
+          show();
+          arrow.classList.remove("next");
+          void arrow.offsetWidth;
+          arrow.classList.add("next");
+        }
+      } else {
+        over = true;
+        arrow.classList.add("miss");
+        finish({ ok: false, reason: steps[idx].invert ? "Gegenteil vergessen!" : "Falsche Richtung" });
+      }
     };
     const pd = (e: PointerEvent) => {
       e.preventDefault();
@@ -478,9 +935,9 @@ const swipe: MicroGame = {
     el.addEventListener("pointerdown", pd);
     window.addEventListener("pointerup", pu);
     window.addEventListener("keydown", kd);
-    expose({ dir: expected });
+    expose({ dir: expected[0], dirs: expected, step: () => idx });
     return {
-      limit: 2900,
+      limit,
       cleanup: () => {
         el.removeEventListener("pointerdown", pd);
         window.removeEventListener("pointerup", pu);
@@ -490,7 +947,9 @@ const swipe: MicroGame = {
   },
 };
 
+// =====================================================================
 // 9) Suchbild: das gesuchte Emoji im Gewimmel finden
+// =====================================================================
 const FAMILIES = [
   ["🐸", "🐢", "🐍", "🦎", "🐊", "🐲", "🦖", "🐛"],
   ["😀", "😃", "😄", "😁", "😆", "😅", "🙂", "😊"],
@@ -509,24 +968,48 @@ const find: MicroGame = {
   bg: "linear-gradient(160deg,#25d9e8,#3d7bff)",
   prep: 1800,
   speed: { veryFast: 1300, fast: 2400 },
-  mount({ el, rng, level, finish, expose }) {
+  stage: (n) => {
+    n = st(n);
+    return {
+      count: Math.min(48, 12 + 3 * (n - 1)),
+      similar: n >= 7 ? 1 : 0,
+      limit: Math.max(3000, 4200 - (n - 1) * 60),
+    };
+  },
+  monotone: { count: 1, similar: 1, limit: -1 },
+  progressionText: ["Jede Stufe 3 Emojis mehr (bis 48)", "Ab Stufe 7 sehen sich die Emojis zum Verwechseln ähnlich", "Immer weniger Zeit (bis 3 s)"],
+  mount({ el, rng, level, stage, finish, expose }) {
     const fam = rng.pick(FAMILIES);
     const target = rng.pick(fam);
-    const others = fam.filter((e) => e !== target);
-    const cols = level < 0.3 ? 4 : level < 0.7 ? 5 : 6;
-    const count = cols * (level < 0.3 ? 4 : level < 0.7 ? 5 : 6);
+    let others: string[] = fam.filter((e) => e !== target);
+    let cols: number;
+    let count: number;
+    let limit: number;
+    if (stage) {
+      const P = find.stage(stage);
+      count = P.count;
+      cols = count <= 16 ? 4 : count <= 25 ? 5 : count <= 36 ? 6 : 7;
+      limit = P.limit;
+      // Leichte Stufen: Ablenkung aus anderen Familien (gut zu unterscheiden)
+      if (!P.similar) others = FAMILIES.filter((f) => f !== fam).flatMap((f) => [...f]);
+    } else {
+      cols = level < 0.3 ? 4 : level < 0.7 ? 5 : 6;
+      count = cols * (level < 0.3 ? 4 : level < 0.7 ? 5 : 6);
+      limit = 4200 + Math.round(level * 1200);
+    }
     const at = rng.int(0, count - 1);
     const wrap = h("div", "find-wrap");
     const head = h("div", "find-target");
     head.append(h("span", "", "Finde"), h("b", "", target));
     const grid = h("div", "find-grid");
     grid.style.setProperty("--cols", String(cols));
+    if (cols >= 7) grid.classList.add("dense");
     let targetEl: HTMLElement | null = null;
     for (let i = 0; i < count; i++) {
       const isT = i === at;
       const b = h("button", "find-cell", isT ? target : rng.pick(others));
       b.setAttribute("aria-label", isT ? "Gesuchtes Emoji" : "Emoji");
-      b.style.animationDelay = `${i * 8}ms`;
+      b.style.animationDelay = `${i * (count > 30 ? 4 : 8)}ms`;
       b.style.setProperty("--tilt", `${rng.int(-14, 14)}deg`);
       if (isT) targetEl = b;
       onPress(b, () => {
@@ -544,11 +1027,13 @@ const find: MicroGame = {
     wrap.append(head, grid);
     el.append(wrap);
     expose({ target: targetEl });
-    return { limit: 4200 + Math.round(level * 1200) };
+    return { limit };
   },
 };
 
+// =====================================================================
 // 10) Blitz-Memory: Reihenfolge merken und nachtippen
+// =====================================================================
 const memory: MicroGame = {
   id: "memory",
   title: "Merk dir's!",
@@ -558,28 +1043,46 @@ const memory: MicroGame = {
   bg: "linear-gradient(160deg,#a45cff,#ff3d8b)",
   prep: 0,
   speed: { veryFast: 350, fast: 600 },
-  mount({ el, rng, level, finish, sfx, expose }) {
-    const len = level < 0.4 ? 3 : level < 0.75 ? 4 : 5;
+  stage: (n) => {
+    n = st(n);
+    return {
+      side: n >= 10 ? 5 : n >= 5 ? 4 : 3,
+      length: Math.min(40, 2 + n),
+      on: Math.max(300, 600 - (n - 1) * 25),
+      gap: n < 15 ? 200 : Math.max(120, 200 - (n - 14) * 10),
+    };
+  },
+  monotone: { side: 1, length: 1, on: -1, gap: -1 },
+  progressionText: ["Stufe 1: 3 Felder leuchten im 3×3-Feld", "Jede Stufe leuchtet ein Feld mehr", "Ab Stufe 5 ein 4×4-Feld, ab Stufe 10 sogar 5×5", "Die Lichter werden immer schneller"],
+  mount({ el, rng, level, stage, finish, sfx, expose }) {
+    const P = stage ? memory.stage(stage) : null;
+    const side = P ? P.side : 3;
+    const cellsN = side * side;
+    const len = P ? P.length : level < 0.4 ? 3 : level < 0.75 ? 4 : 5;
     const seq: number[] = [];
     while (seq.length < len) {
-      const n = rng.int(0, 8);
+      const n = rng.int(0, cellsN - 1);
       if (n !== seq[seq.length - 1]) seq.push(n);
     }
     const wrap = h("div", "mem-wrap");
     const label = h("div", "mem-label", "Schau genau hin…");
     const grid = h("div", "mem-grid");
+    grid.style.setProperty("--side", String(side));
+    if (side >= 4) grid.classList.add(side >= 5 ? "s5" : "s4");
     const cells: HTMLElement[] = [];
-    for (let i = 0; i < 9; i++) {
+    for (let i = 0; i < cellsN; i++) {
       const c = h("button", "mem-cell");
       c.setAttribute("aria-label", `Feld ${i + 1}`);
       cells.push(c);
       grid.append(c);
     }
+    const progress = h("div", "mem-progress");
     wrap.append(label, grid);
+    if (P) wrap.append(progress);
     el.append(wrap);
 
-    const ON = 380,
-      GAP = 140,
+    const ON = P ? P.on : 380,
+      GAP = P ? P.gap : 140,
       START = 350;
     const timers: number[] = [];
     seq.forEach((n, i) => {
@@ -595,12 +1098,14 @@ const memory: MicroGame = {
     let ready = false;
     let inputStart = 0;
     let pos = 0;
+    const setProgress = () => (progress.textContent = `${pos} / ${len}`);
     timers.push(
       window.setTimeout(() => {
         ready = true;
         inputStart = performance.now();
         label.textContent = "Jetzt du!";
         grid.classList.add("ready");
+        setProgress();
       }, showEnd),
     );
     cells.forEach((c, i) =>
@@ -612,6 +1117,7 @@ const memory: MicroGame = {
           c.classList.add("tap");
           sfx.pop(pos);
           pos += 1;
+          setProgress();
           if (pos === len) {
             const t = performance.now() - inputStart;
             finish({ ok: true, rating: Math.max(0, Math.min(1, 1 - (t - len * 280) / (len * 700))), ms: Math.round(t / len) });
@@ -628,7 +1134,9 @@ const memory: MicroGame = {
   },
 };
 
-// 11) Im Takt: drei Schläge hören, den vierten selbst tippen
+// =====================================================================
+// 11) Im Takt: Schläge hören, den nächsten selbst tippen
+// =====================================================================
 const beat: MicroGame = {
   id: "beat",
   title: "Im Takt!",
@@ -638,8 +1146,21 @@ const beat: MicroGame = {
   bg: "radial-gradient(120% 90% at 50% 0%,#2a3fa0,#121633)",
   prep: 0,
   speed: { veryFast: 45, fast: 100 },
-  mount({ el, rng, level, finish, sfx, expose }) {
-    const interval = Math.round(lerp(640, 430, level) + rng.int(-30, 30));
+  stage: (n) => {
+    n = st(n);
+    return {
+      bpm: Math.min(180, 90 + 5 * (n - 1)),
+      // Erlaubte Abweichung in ms (vor oder nach dem Schlag)
+      window: Math.max(70, 180 - (n - 1) * 6),
+      lead: n >= 10 ? 4 : 3,
+    };
+  },
+  monotone: { bpm: 1, window: -1, lead: 1 },
+  progressionText: ["Das Tempo steigt jede Stufe (90 bis 180 BPM)", "Du musst immer genauer treffen", "Ab Stufe 10: vier Vorgabe-Schläge, du tippst den fünften"],
+  mount({ el, rng, level, stage, finish, sfx, expose }) {
+    const P = stage ? beat.stage(stage) : null;
+    const interval = P ? Math.round(60000 / P.bpm) : Math.round(lerp(640, 430, level) + rng.int(-30, 30));
+    const lead = P ? P.lead : 3;
     const START = 450;
     const wrap = h("div", "beat-wrap");
     const ring = h("div", "beat-ring");
@@ -647,8 +1168,8 @@ const beat: MicroGame = {
     ring.append(core);
     const dots = h("div", "beat-dots");
     const dotEls: HTMLElement[] = [];
-    for (let i = 0; i < 4; i++) {
-      const d = h("span", i === 3 ? "beat-dot you" : "beat-dot", i === 3 ? "DU" : String(i + 1));
+    for (let i = 0; i <= lead; i++) {
+      const d = h("span", i === lead ? "beat-dot you" : "beat-dot", i === lead ? "DU" : String(i + 1));
       dotEls.push(d);
       dots.append(d);
     }
@@ -657,9 +1178,9 @@ const beat: MicroGame = {
     ring.style.setProperty("--beat", `${interval}ms`);
 
     const t0 = performance.now();
-    const target = t0 + START + 3 * interval;
+    const target = t0 + START + lead * interval;
     const timers: number[] = [];
-    for (let i = 0; i < 3; i++) {
+    for (let i = 0; i < lead; i++) {
       timers.push(
         window.setTimeout(() => {
           ring.classList.remove("pulse");
@@ -670,32 +1191,36 @@ const beat: MicroGame = {
         }, START + i * interval),
       );
     }
-    const window_ = interval * 0.42;
+    const window_ = P ? P.window : interval * 0.42;
     onPress(el, () => {
       const err = performance.now() - target;
       if (err < -window_ || err > window_) {
-        dotEls[3].classList.add("miss");
+        dotEls[lead].classList.add("miss");
         finish({ ok: false, reason: err < 0 ? "Zu früh! 🥁" : "Zu spät! 🥁" });
         return;
       }
       ring.classList.remove("pulse");
       void ring.offsetWidth;
       ring.classList.add("pulse", "hit");
-      dotEls[3].classList.add("on");
+      dotEls[lead].classList.add("on");
       core.textContent = `${err > 0 ? "+" : ""}${Math.round(err)} ms`;
       finish({ ok: true, rating: Math.max(0, 1 - Math.abs(err) / window_), ms: Math.round(Math.abs(err)) });
     });
     expose({ targetAt: target });
     return {
-      limit: Math.round(START + 3 * interval + window_ + 60),
+      limit: Math.round(START + lead * interval + window_ + 60),
       hideTimer: true,
       cleanup: () => timers.forEach(clearTimeout),
     };
   },
 };
 
+// =====================================================================
 // 12) Muster: Welche Form kommt als Nächstes?
+// =====================================================================
 const SHAPES = ["🔴", "🟦", "⭐", "💜", "🔶", "🍀", "⚡", "🌙"] as const;
+/** Größerer Vorrat für die Minigame-Stufen */
+const SHAPES_STAGE = [...SHAPES, "🔺", "🟢", "💎", "🍩"] as const;
 const UNITS: Record<number, number[][]> = {
   2: [[0, 1]],
   3: [
@@ -703,6 +1228,14 @@ const UNITS: Record<number, number[][]> = {
     [0, 0, 1],
     [0, 1, 1],
     [0, 1, 0],
+  ],
+  4: [
+    [0, 1, 2, 3],
+    [0, 0, 1, 1],
+    [0, 1, 1, 2],
+    [0, 1, 2, 1],
+    [0, 1, 0, 2],
+    [0, 0, 1, 2],
   ],
 };
 
@@ -715,28 +1248,45 @@ const pattern: MicroGame = {
   bg: "linear-gradient(160deg,#c6ff3d,#22c36b)",
   prep: 1600,
   speed: { veryFast: 1200, fast: 2100 },
-  mount({ el, rng, level, finish, expose }) {
-    const p = level < 0.35 ? 2 : level < 0.7 ? rng.pick([2, 3]) : 3;
+  stage: (n) => {
+    n = st(n);
+    return {
+      period: n >= 9 ? 4 : n >= 4 ? 3 : 2,
+      pool: Math.min(SHAPES_STAGE.length, 6 + Math.floor((n - 1) / 3)),
+      options: n >= 12 ? 4 : 3,
+      limit: Math.max(2800, 4200 - (n - 1) * 70),
+    };
+  },
+  monotone: { period: 1, pool: 1, options: 1, limit: -1 },
+  progressionText: ["Das Muster wird länger: 2, dann 3 (ab Stufe 4), dann 4 Teile (ab Stufe 9)", "Mehr verschiedene Symbole", "Ab Stufe 12 vier Antworten statt drei", "Weniger Zeit (bis 2,8 s)"],
+  mount({ el, rng, level, stage, finish, expose }) {
+    const P = stage ? pattern.stage(stage) : null;
+    const p = P ? P.period : level < 0.35 ? 2 : level < 0.7 ? rng.pick([2, 3]) : 3;
+    const shapes: readonly string[] = P ? SHAPES_STAGE.slice(0, P.pool) : SHAPES;
     const unitIdx = rng.pick(UNITS[p]);
-    const symbols = rng.shuffle(SHAPES).slice(0, 3);
+    const symbols = rng.shuffle(shapes).slice(0, Math.max(...unitIdx) + 1 < 3 ? 3 : Math.max(...unitIdx) + 1);
     const unit = unitIdx.map((i) => symbols[i]);
     const shown = 2 * p + rng.int(0, p - 1);
     const seq = Array.from({ length: shown }, (_, i) => unit[i % p]);
     const answer = unit[shown % p];
     const used = Array.from(new Set(unit)).filter((x) => x !== answer);
-    const extra = SHAPES.filter((x) => !unit.includes(x));
-    const opts = rng.shuffle([answer, ...used.slice(0, 2), ...rng.shuffle(extra)].slice(0, 3));
+    const extra = shapes.filter((x) => !unit.includes(x));
+    const nOpts = P ? P.options : 3;
+    const opts = rng.shuffle([answer, ...used.slice(0, nOpts - 1), ...rng.shuffle(extra)].slice(0, nOpts));
 
     const wrap = h("div", "pat-wrap");
     const row = h("div", "pat-row");
     // Höchstens 2 volle Durchläufe + 1 zeigen, damit die Reihe auf jedes Handy passt
-    seq.slice(-Math.min(seq.length, 2 * p + 1)).forEach((x, i) => {
+    const visible = seq.slice(-Math.min(seq.length, 2 * p + 1));
+    if (visible.length >= 8) row.classList.add("long");
+    visible.forEach((x, i) => {
       const c = h("span", "pat-item", x);
       c.style.animationDelay = `${i * 40}ms`;
       row.append(c);
     });
     row.append(h("span", "pat-item q", "?"));
     const choices = h("div", "pat-choices");
+    choices.style.setProperty("--cols", String(nOpts));
     let target: HTMLElement | null = null;
     opts.forEach((o) => {
       const b = h("button", "pat-btn", o);
@@ -757,7 +1307,7 @@ const pattern: MicroGame = {
     wrap.append(row, choices);
     el.append(wrap);
     expose({ target });
-    return { limit: 4200 };
+    return { limit: P ? P.limit : 4200 };
   },
 };
 

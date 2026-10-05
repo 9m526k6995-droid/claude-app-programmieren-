@@ -1,7 +1,7 @@
 {
   "name": "ZWIP – 10 Blitz-Challenges",
   "short_name": "ZWIP",
-  "description": "10 Blitz-Challenges in 30 Sekunden. Jeden Tag neu.",
+  "description": "10 Blitz-Challenges. Jeden Tag neu.",
   "start_url": "./",
   "scope": "./",
   "display": "standalone",

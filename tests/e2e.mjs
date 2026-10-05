@@ -35,7 +35,7 @@ function psqlFile(file, db = DB) {
     process.exit(1);
   }
   psql(`create database ${DB}`, "postgres");
-  for (const f of ["tests/sql/supabase-shim.sql", "supabase/profiles.sql", "supabase/schema.sql", "supabase/trophies.sql", "supabase/profile.sql"]) psqlFile(f);
+  for (const f of ["tests/sql/supabase-shim.sql", "supabase/profiles.sql", "supabase/schema.sql", "supabase/trophies.sql", "supabase/profile.sql", "supabase/minigames.sql"]) psqlFile(f);
 }
 const lit = (v) =>
   v === null || v === undefined
@@ -217,9 +217,10 @@ async function newPage() {
   return { ctx, page };
 }
 
+/** Profil-Tab öffnen (dort sind jetzt Konto, Abmelden und Einstellungen) */
 async function openSettings(page) {
-  await page.click('[data-act="settings"]', { force: true });
-  await page.waitForSelector("#set-logout");
+  await page.click('[data-tab="profil"]', { force: true });
+  await page.waitForSelector('[data-pf="logout"]');
 }
 
 async function fillAuth(page, email, pw, pw2) {
@@ -349,12 +350,15 @@ async function solveRound(page, lastN, fail = false) {
       break;
     }
     case "swipe": {
-      const c = await stageCenter(page);
-      const d = { up: [0, -140], down: [0, 140], left: [-140, 0], right: [140, 0] }[r.dir];
-      await page.mouse.move(c.x, c.y);
-      await page.mouse.down();
-      await page.mouse.move(c.x + d[0], c.y + d[1], { steps: 5 });
-      await page.mouse.up();
+      const dirs = await page.evaluate(() => window.__zwip.round.dirs ?? [window.__zwip.round.dir]);
+      for (const dir of dirs) {
+        const c = await stageCenter(page);
+        const d = { up: [0, -140], down: [0, 140], left: [-140, 0], right: [140, 0] }[dir];
+        await page.mouse.move(c.x, c.y);
+        await page.mouse.down();
+        await page.mouse.move(c.x + d[0], c.y + d[1], { steps: 5 });
+        await page.mouse.up();
+      }
       break;
     }
   }
@@ -457,9 +461,9 @@ try {
 
   // 5b) Logout → Startmenü, Fehlerfälle bei der Anmeldung, erneut anmelden
   await openSettings(A.page);
-  check((await A.page.textContent(".account-mail")).trim() === "lena@test.de", "Einstellungen zeigen angemeldete E-Mail");
+  check((await A.page.textContent(".account-mail")).trim() === "lena@test.de", "Profil-Tab zeigt angemeldete E-Mail");
   await A.page.screenshot({ path: `${SHOTS}/5b-settings.png` });
-  await A.page.click("#set-logout", { force: true });
+  await A.page.click('[data-pf="logout"]', { force: true });
   await A.page.waitForSelector('[data-auth="login"]', { timeout: 5000 });
   check((await A.page.locator('[data-act="daily"]').count()) === 0, "Nach Logout wieder Startmenü");
   await A.page.reload();
@@ -517,7 +521,7 @@ try {
   await D.page.waitForSelector('[data-act="daily"]', { timeout: 5000 });
   check(!(await D.page.evaluate(() => location.hash)), "Bestätigungslink loggt ein und Token verschwindet aus der Adresse");
   await openSettings(D.page);
-  await D.page.click("#set-logout", { force: true });
+  await D.page.click('[data-pf="logout"]', { force: true });
   await D.page.waitForSelector('[data-auth="register"]');
   await D.page.click('[data-auth="register"]', { force: true });
   await fillAuth(D.page, "max@test.de", "passwort2", "passwort2");
@@ -550,7 +554,7 @@ try {
   await B.page.screenshot({ path: `${SHOTS}/8-board.png` });
 
   // 8) Endlos: absichtlich in Runde 3 verlieren
-  await B.page.click('[data-act="home"]', { force: true });
+  await B.page.click('[data-tab="spielen"]', { force: true });
   await B.page.click('[data-act="endless"]', { force: true });
   let n = 0;
   for (let i = 0; i < 3; i++) n = (await solveRound(B.page, n, i === 2)).n;
@@ -559,7 +563,7 @@ try {
   check(/\d+ Runden geschafft/.test(er), `Endlos endet nach Fehler: "${er}"`);
 
   // 8b) Die vier neuen Challenges im Training, mit echten Taps gelöst
-  await B.page.goto(`${BASE}?e2e=1&only=find,memory,beat,pattern`);
+  await B.page.goto(`${BASE}?e2e=1&only=find,memory,beat,pattern#/spielen`);
   await B.page.waitForSelector('[data-act="free"]', { timeout: 5000 });
   await B.page.click('[data-act="free"]', { force: true });
   const newSeen = [];
@@ -586,13 +590,9 @@ try {
   const fState = await B.page.evaluate(() => [...document.querySelectorAll(".tile b")].map((b) => Number(b.textContent)));
   check(fState.every((p) => p === 0), `Falsche Antworten geben 0 Punkte (${fState.join("/")})`);
 
-  // 9) Erklärung beim ersten Mal: läuft durch, lässt sich nicht wegtippen, kommt per Einstellung wieder
-  await B.page.goto(`${BASE}?e2e=1&explain=3000`);
+  // 9) Erklärkarte vor JEDER Aufgabe: läuft durch, lässt sich nicht wegtippen (Dauer im Test verkürzt)
+  await B.page.goto(`${BASE}?e2e=1&explain=3000#/spielen`);
   await B.page.waitForSelector('[data-act="free"]');
-  await openSettings(B.page);
-  await B.page.click("#set-explain", { force: true });
-  check((await B.page.textContent("#set-explain")).includes("kommen wieder"), "Einstellung: Erklärungen wieder anzeigen");
-  await B.page.click("#set-save", { force: true });
   await B.page.click('[data-act="free"]', { force: true });
   await B.page.waitForSelector(".intro.explain");
   const exText = await B.page.textContent(".explain-text");
@@ -606,12 +606,43 @@ try {
   check(Number(await B.page.textContent(".explain-n")) < exStart, "Countdown läuft herunter");
   await B.page.screenshot({ path: `${SHOTS}/2-explain.png` });
   await B.page.waitForSelector(".intro.explain", { state: "detached", timeout: 4000 });
-  check(true, "Nach Ablauf startet das Minispiel automatisch");
+  check(true, "Nach Ablauf startet die Aufgabe automatisch");
+  await solveRound(B.page, 0);
+  await B.page.waitForSelector(".intro.explain", { timeout: 4000 });
+  check((await B.page.textContent(".intro-round")).includes("2 / 10"), "Auch vor der zweiten Aufgabe kommt die Erklärkarte");
 
-  // Training startet, Abbrechen funktioniert
+  // Training abbrechen → zurück auf „Spielen“
   await B.page.click('[data-act="quit"]', { force: true });
-  await B.page.waitForSelector(".home", { timeout: 4000 });
-  check(true, "Training lässt sich abbrechen");
+  await B.page.waitForSelector(".mode-list", { timeout: 4000 });
+  check(true, "Training lässt sich abbrechen (zurück auf „Spielen“)");
+
+  // ================= NAVIGATION =================
+  await B.page.goto(`${BASE}?e2e=1#/spielen`);
+  await B.page.waitForSelector(".mode-list");
+  check((await B.page.locator(".tabbar .tab").count()) === 5, "Tab-Leiste mit 5 Bereichen");
+  check((await B.page.getAttribute('.tab[data-tab="spielen"]', "aria-current")) === "page", "Aktiver Tab ist markiert");
+  check((await B.page.locator(".mode-card").count()) === 5, "„Spielen“ zeigt 5 Modi");
+  await B.page.screenshot({ path: `${SHOTS}/n1-spielen.png` });
+  await B.page.click('[data-tab="ranglisten"]', { force: true });
+  await B.page.waitForSelector(".seg");
+  check(B.page.url().endsWith("#/ranglisten"), "Tab wechselt die Adresse (#/ranglisten)");
+  await B.page.goBack();
+  await B.page.waitForSelector(".mode-list", { timeout: 4000 });
+  check(true, "Zurück-Knopf führt zum vorherigen Tab");
+  await B.page.click('.mode-card[href="#/minigames"]', { force: true });
+  await B.page.waitForSelector(".mg-grid");
+  check((await B.page.locator(".mg-card").count()) === 12, "Minigames-Übersicht mit 12 Spielen");
+  await B.page.reload();
+  await B.page.waitForSelector(".mg-grid", { timeout: 5000 });
+  check(true, "Neuladen bleibt auf demselben Bildschirm");
+  await B.page.screenshot({ path: `${SHOTS}/n2-minigames.png` });
+  for (const t of ["start", "freunde", "profil"]) {
+    await B.page.click(`[data-tab="${t}"]`, { force: true });
+    await B.page.waitForFunction((t) => location.hash === `#/${t}`, t);
+  }
+  await B.page.waitForSelector('[data-pf="logout"]');
+  check(true, "Alle Tabs erreichbar (Start, Freunde, Profil)");
+  check(!(await B.page.locator('[data-act="settings"]').count()), "Kein extra Einstellungs-Popup mehr");
 
   // ================= TROPHÄEN =================
   const dbVal = (sql) => psql(sql).out.trim();
@@ -729,9 +760,8 @@ try {
         insert into auth.users (id, email) values ('11111111-2222-3333-4444-777777777777', 'neu@x.de');
         update public.profiles set username = 'Neuling', trophies = 40, best_trophies = 40 where id = '11111111-2222-3333-4444-777777777777';`);
   await tP.goto(`${BASE}?e2e=1`);
-  await tP.waitForSelector('[data-act="board"]');
-  await tP.click('[data-act="board"]', { force: true });
-  await tP.click('[data-act="tab-world"]', { force: true });
+  await tP.waitForSelector('[data-tab="ranglisten"]');
+  await tP.click('[data-tab="ranglisten"]', { force: true });
   await tP.waitForSelector(".trow", { timeout: 8000 });
   const rows = await tP.$$eval(".trow", (els) =>
     els.map((e) => ({ name: e.dataset.player, t: Number(e.querySelector("b").textContent.replace(/\D/g, "")), me: e.classList.contains("me"), rank: e.querySelector(".rk").textContent })),
@@ -759,8 +789,8 @@ try {
   // ================= FREUNDE =================
   const fB = B.page; // Tom
   await fB.goto(`${BASE}?e2e=1`);
-  await fB.waitForSelector('[data-act="friends"]');
-  await fB.click('[data-act="friends"]', { force: true });
+  await fB.waitForSelector('[data-tab="freunde"]');
+  await fB.click('[data-tab="freunde"]', { force: true });
   await fB.waitForSelector(".friends .name-banner");
   await fB.click(".friends .name-banner", { force: true });
   await fB.fill("#un-input", "Tom");
@@ -770,8 +800,10 @@ try {
   await fB.waitForSelector('[data-add="Lena"]', { timeout: 5000 });
   check(true, "Spieler über den Namen gefunden");
   await fB.click('[data-add="Lena"]', { force: true });
-  await fB.waitForSelector(".toast");
-  check((await fB.textContent(".toast")).includes("Anfrage gesendet"), "Freundschaftsanfrage gesendet");
+  const sentOk = await fB
+    .waitForFunction(() => document.querySelector(".toast")?.textContent.includes("Anfrage gesendet"), null, { timeout: 5000 })
+    .then(() => true, () => false);
+  check(sentOk, "Freundschaftsanfrage gesendet");
   await fB.waitForSelector('[data-cancel="Lena"]');
   check(true, "Gesendete Anfrage sichtbar");
   await fB.fill("#fr-q", "lena");
@@ -779,8 +811,7 @@ try {
   check(true, "Doppelte Anfrage nicht möglich (Status „Angefragt“)");
   await fB.screenshot({ path: `${SHOTS}/f1-search.png` });
 
-  await tP.click('[data-act="home"]', { force: true });
-  await tP.click('[data-act="friends"]', { force: true });
+  await tP.click('[data-tab="freunde"]', { force: true });
   await tP.waitForSelector('[data-accept="Tom"]', { timeout: 5000 });
   check(true, "Eingehende Anfrage bei Lena sichtbar");
   await tP.screenshot({ path: `${SHOTS}/f2-incoming.png` });
@@ -788,9 +819,8 @@ try {
   await tP.waitForSelector('[data-friend="Tom"]', { timeout: 5000 });
   check(dbVal("select status from public.friendships") === "accepted", "Freundschaft in der Datenbank: accepted");
   psql("update public.profiles set trophies = 9000, best_trophies = 9000 where username = 'Tom'");
-  await tP.click('[data-act="home"]', { force: true }).catch(() => {});
-  await tP.goto(`${BASE}?e2e=1`);
-  await tP.click('[data-act="friends"]', { force: true });
+  await tP.goto(`${BASE}?e2e=1#/start`);
+  await tP.click('[data-tab="freunde"]', { force: true });
   await tP.waitForSelector('[data-friend="Tom"]');
   check((await tP.textContent('[data-friend="Tom"]')).includes("Platin"), "Freund mit Trophäen und Liga");
   await tP.screenshot({ path: `${SHOTS}/f3-friends.png` });
@@ -806,10 +836,10 @@ try {
 
   // ================= PROFIL =================
   await tP.goto(`${BASE}?e2e=1`);
-  await tP.waitForSelector('[data-act="profile"]');
-  await tP.click('[data-act="profile"]', { force: true });
+  await tP.waitForSelector('[data-tab="profil"]');
+  await tP.click('[data-tab="profil"]', { force: true });
   await tP.waitForFunction(() => document.querySelector(".pf-head h3")?.textContent === "Lena", null, { timeout: 5000 });
-  check(true, "Profil-Popup öffnet sich mit Spielername");
+  check(true, "Profil-Tab zeigt Spielername");
   const profLink = (await tP.textContent(".pf-url-text")).trim();
   check(profLink.endsWith("?p=Lena"), `Profil zeigt Direktlink (${profLink})`);
   check((await tP.textContent(".pf-stats")).includes("Höchststand"), "Profil zeigt Statistiken");
@@ -869,13 +899,13 @@ try {
   await tP.click("#pw-save", { force: true });
   await tP.waitForFunction(() => document.querySelector(".toast")?.textContent.includes("Passwort geändert"), null, { timeout: 5000 });
   check(mock.users.get("lena@test.de").password === "neuesPasswort1", "Passwort beim Auth-Server geändert");
-  await tP.click(".modal [data-close]", { force: true });
-  await tP.waitForSelector(".modal", { state: "detached" });
-  check((await tP.locator(".top-avatar img").count()) === 1, "Profilbild auch oben im Hauptmenü");
-  await tP.screenshot({ path: `${SHOTS}/p4-home-avatar.png` });
+  await tP.reload();
+  await tP.waitForSelector(".pf-avatar img", { timeout: 5000 });
+  check(true, "Profilbild bleibt nach Neuladen im Profil");
+  await tP.screenshot({ path: `${SHOTS}/p4-profile-tab.png`, fullPage: true });
 
   // E-Mail ändern: mit Bestätigungs-Mail (Standard bei Supabase)
-  await tP.click('[data-act="profile"]', { force: true });
+  await tP.waitForSelector(".pf-since"); // Profil-Daten vom Server sind da
   await tP.waitForSelector('[data-pf="email"]');
   check((await tP.textContent('[data-pf="email"]')).includes("lena@test.de"), "Profil zeigt aktuelle E-Mail");
   await tP.click('[data-pf="email"]', { force: true });
@@ -911,19 +941,17 @@ try {
   await tP.waitForFunction(() => document.querySelector(".toast")?.textContent.includes("E-Mail geändert"), null, { timeout: 5000 });
   await tP.waitForFunction(() => document.querySelector('[data-pf="email"]')?.textContent.includes("lena2@test.de"), null, { timeout: 5000 });
   check(mock.users.has("lena2@test.de"), "E-Mail beim Auth-Server geändert und im Profil angezeigt");
-  await tP.click(".modal [data-close]", { force: true });
-  await tP.waitForSelector(".modal", { state: "detached" });
   psql("update auth.users set email = 'lena2@test.de' where email = 'lena@test.de'");
 
   // Mit neuem Passwort anmelden
   await openSettings(tP);
-  await tP.click("#set-logout", { force: true });
+  await tP.click('[data-pf="logout"]', { force: true });
   await tP.waitForSelector('[data-auth="login"]', { timeout: 5000 });
   await tP.click('[data-auth="login"]', { force: true });
   await fillAuth(tP, "lena2@test.de", "geheim123");
   check((await authError(tP)).includes("falsch"), "Altes Passwort funktioniert nicht mehr");
   await fillAuth(tP, "lena2@test.de", "neuesPasswort1");
-  await tP.waitForSelector('[data-act="profile"]', { timeout: 5000 });
+  await tP.waitForSelector('[data-tab="profil"]', { timeout: 5000 });
   check(true, "Anmeldung mit neuem Passwort");
 
   // Direktlink öffnen (Tom öffnet Lenas Link)
@@ -945,6 +973,126 @@ try {
   await tP.goto(`${BASE}?e2e=1&p=lena`);
   await tP.waitForSelector('[data-pf="password"]', { timeout: 6000 });
   check(true, "Eigener Link öffnet das eigene Profil");
+
+  // ================= MINIGAMES =================
+  // Jedes Spiel lässt sich auf jeder Stufe 1–60 fehlerfrei aufbauen
+  const mountProblems = await tP.evaluate(() => {
+    const bad = [];
+    for (const id of ["odd", "stop", "wait", "more", "pop", "sum", "ink", "swipe", "find", "memory", "beat", "pattern"])
+      for (let n = 1; n <= 60; n++) {
+        try {
+          const r = window.__zwip.mountStage(id, n);
+          if (!(r.limit > 0)) bad.push(`${id}@${n}: limit ${r.limit}`);
+        } catch (e) {
+          bad.push(`${id}@${n}: ${e.message}`);
+        }
+      }
+    return bad;
+  });
+  check(mountProblems.length === 0, `Alle 12 Minigames bauen auf Stufe 1–60 fehlerfrei auf${mountProblems.length ? ": " + mountProblems.slice(0, 5).join(" | ") : ""}`);
+
+  await tP.goto(`${BASE}?e2e=1#/minigames`);
+  await tP.waitForSelector('.mg-card[data-mg="memory"]');
+  await tP.click('.mg-card[data-mg="memory"]', { force: true });
+  await tP.waitForSelector('[data-act="mgplay"]');
+  check((await tP.locator(".mg-prog li").count()) >= 3, "Detailseite zeigt „So wird's schwerer“");
+  check((await tP.textContent(".mg-hero p")).includes("Reihenfolge"), "Detailseite zeigt die Erklärung");
+  await tP.screenshot({ path: `${SHOTS}/m1-detail.png`, fullPage: true });
+  await tP.click('[data-act="mgplay"]', { force: true });
+  await tP.waitForSelector(".mg-start");
+  check((await tP.locator(".intro.explain").count()) === 0, "Minigame startet ohne lange Erklärkarte, nur mit 3-2-1");
+  await tP.screenshot({ path: `${SHOTS}/m2-start.png` });
+  let mn = 0;
+  for (let i = 0; i < 4; i++) {
+    const r = await solveRound(tP, mn);
+    mn = r.n;
+    check(r.id === "memory", `Stufe ${i + 1}: immer dasselbe Spiel`);
+    if (i === 3) await tP.screenshot({ path: `${SHOTS}/m3-run-stage4.png` });
+  }
+  await tP.waitForFunction(() => document.getElementById("mg-stage")?.textContent === "5", null, { timeout: 5000 });
+  const memLen = await tP.evaluate(async () => {
+    await new Promise((r) => setTimeout(r, 50));
+    return document.querySelectorAll(".mem-cell").length;
+  });
+  check(memLen === 16, `Ab Stufe 5 ein 4×4-Feld (${memLen} Felder)`);
+  await solveRound(tP, mn, true);
+  await tP.waitForSelector(".mg-result", { timeout: 8000 });
+  await tP.waitForFunction(() => !document.querySelector(".mg-result .tr-status"), null, { timeout: 8000 });
+  check((await tP.textContent("#mg-res-n")) === "4", "Ergebnis zeigt Stufe 4");
+  check(dbVal("select best_stage || '/' || plays from public.minigame_bests b join public.profiles p on p.id = b.user_id where p.username = 'Lena' and b.game_id = 'memory'") === "4/1", "Stufe 4 steht in der Datenbank");
+  check((await tP.textContent(".mg-result")).includes("Neuer Rekord"), "Erster Lauf = neuer Rekord");
+  check((await tP.textContent(".mg-res-rank")).includes("#1"), "Rang in der Spiel-Rangliste wird angezeigt");
+  await tP.screenshot({ path: `${SHOTS}/m4-result.png` });
+
+  // Spieler mit besserem Wert steht davor
+  psql(`insert into public.minigame_bests (user_id, game_id, best_stage, best_ms, plays) values ('11111111-2222-3333-4444-555555555555', 'memory', 9, 30000, 3)`);
+  await tP.click('[data-act="mgboard"]', { force: true });
+  await tP.waitForSelector(".mrow", { timeout: 5000 });
+  const mrows = await tP.$$eval(".mrow", (els) => els.map((e) => ({ name: e.dataset.player, me: e.classList.contains("me") })));
+  check(mrows[0]?.name === "Profi" && mrows[1]?.name === "Lena" && mrows[1].me, `Spiel-Rangliste: Profi (Stufe 9) vor mir (${mrows.map((r) => r.name).join(", ")})`);
+  check(tP.url().endsWith("#/ranglisten/minigames/memory"), "Rangliste öffnet den Minigames-Tab mit dem richtigen Spiel");
+  await tP.screenshot({ path: `${SHOTS}/m5-board.png` });
+
+  // Drei weitere Minigames: zwei Stufen schaffen, dann Fehler
+  for (const id of ["odd", "sum", "pattern"]) {
+    await tP.goto(`${BASE}?e2e=1#/minigames/${id}`);
+    await tP.waitForSelector('[data-act="mgplay"]');
+    await tP.click('[data-act="mgplay"]', { force: true });
+    let k = 0;
+    for (let i = 0; i < 2; i++) k = (await solveRound(tP, k)).n;
+    await solveRound(tP, k, true);
+    await tP.waitForSelector(".mg-result", { timeout: 8000 });
+    await tP.waitForFunction(() => !document.querySelector(".mg-result .tr-status"), null, { timeout: 8000 });
+    const got = await tP.textContent("#mg-res-n");
+    const db = dbVal(`select best_stage from public.minigame_bests b join public.profiles p on p.id = b.user_id where p.username = 'Lena' and b.game_id = '${id}'`);
+    check(got === "2" && db === "2", `${id}: Stufe 2 geschafft und gespeichert`);
+  }
+
+  // Übersicht zeigt Bestwerte und Ränge
+  await tP.goto(`${BASE}?e2e=1#/minigames`);
+  await tP.waitForFunction(() => document.querySelector('.mg-card[data-mg="memory"] .mg-best')?.textContent.includes("Stufe 4"), null, { timeout: 5000 });
+  check((await tP.textContent('.mg-card[data-mg="memory"]')).includes("#2"), "Übersicht zeigt Bestleistung und Rang");
+  await tP.screenshot({ path: `${SHOTS}/m6-overview.png` });
+
+  // Zurück-Knopf während eines Laufs beendet den Lauf und zeigt die vorige Seite
+  await tP.click('.mg-card[data-mg="ink"]', { force: true });
+  await tP.waitForSelector('[data-act="mgplay"]');
+  await tP.click('[data-act="mgplay"]', { force: true });
+  await solveRound(tP, 0);
+  await tP.goBack();
+  await tP.waitForSelector(".mg-grid", { timeout: 6000 });
+  await tP.waitForFunction(() => true);
+  await new Promise((r) => setTimeout(r, 800));
+  check(dbVal("select plays from public.minigame_bests b join public.profiles p on p.id = b.user_id where p.username = 'Lena' and b.game_id = 'ink'") === "1", "Zurück-Knopf beendet den Lauf, er wird trotzdem gewertet");
+
+  // ================= SCHMALE HANDYS (360 px) =================
+  await tP.setViewportSize({ width: 360, height: 740 });
+  const overflow = [];
+  for (const r of ["start", "spielen", "minigames", "minigames/memory", "ranglisten/welt", "ranglisten/minigames/memory", "ranglisten/crew", "freunde", "profil"]) {
+    await tP.goto(`${BASE}?e2e=1#/${r}`);
+    await tP.waitForSelector(".tabbar");
+    await tP.waitForTimeout(500);
+    const w = await tP.evaluate(() => document.documentElement.scrollWidth);
+    if (w > 361) overflow.push(`${r}: ${w}px`);
+    await tP.screenshot({ path: `${SHOTS}/w360-${r.replace(/\//g, "-")}.png` });
+  }
+  check(overflow.length === 0, `Kein waagrechtes Scrollen bei 360 px${overflow.length ? ": " + overflow.join(", ") : ""}`);
+  // Schwere Stufen ansehen (Layout bei vielen Feldern)
+  for (const [id, n] of [["odd", 20], ["memory", 12], ["find", 14], ["pattern", 12], ["pop", 13], ["more", 15], ["ink", 12], ["swipe", 14], ["beat", 12], ["sum", 14], ["wait", 8], ["stop", 12]]) {
+    await tP.evaluate(([id, n]) => window.__zwip.previewStage(id, n), [id, n]);
+    await tP.waitForTimeout(450);
+    const ow = await tP.evaluate(() => {
+      const st = document.querySelector(".e2e-preview .stage").getBoundingClientRect();
+      return [...document.querySelectorAll(".e2e-preview .stage *")].filter((e) => {
+        const b = e.getBoundingClientRect();
+        return b.width > 0 && (b.right > st.right + 2 || b.left < st.left - 2) && !e.closest(".bubble");
+      }).length;
+    });
+    check(ow === 0, `${id} Stufe ${n}: alles passt auf ein 360-px-Handy`);
+    await tP.screenshot({ path: `${SHOTS}/s360-${id}-${n}.png` });
+  }
+  await tP.evaluate(() => document.querySelector(".e2e-preview")?.remove());
+  await tP.setViewportSize({ width: 390, height: 844 });
 
   // 10) Kaputter Link wird abgefangen
   const C = await newPage();

@@ -1,6 +1,6 @@
 # ⚡ ZWIP
 
-**10 Blitz-Challenges. 30 Sekunden. Jeden Tag neu. Für alle gleich.**
+**10 Blitz-Challenges. Jeden Tag neu. Für alle gleich. Plus 12 Minigames mit eigenen Ranglisten.**
 
 ZWIP ist ein Mobile-first Web-Game für Jugendliche und junge Erwachsene. Kostenlos anmelden, einmal tippen, spielen. Keine Installation, keine Werbung, keine Lootboxen.
 
@@ -27,23 +27,64 @@ Die letzten vier sind ab Daily #5 dabei (im Training und Endlos-Modus sofort). J
 
 Schnell und richtig gibt bis zu 100 Punkte pro Challenge, maximal 1000. Die Schwierigkeit steigt innerhalb der Runde.
 
+Vor **jeder Aufgabe** zeigt eine Erklärkarte 4 Sekunden lang, was zu tun ist (Emoji, Titel, ausführliche Erklärung, Countdown). Sie lässt sich nicht wegtippen, ✕ bricht sofort ab.
+
+### Aufbau der App
+
+Unten sitzt eine Leiste mit fünf Bereichen. Jeder Bildschirm hat eine eigene Adresse (`#/…`), dadurch funktioniert der Zurück-Knopf am Handy und nach dem Neuladen bleibt man, wo man war.
+
+| Tab | Inhalt |
+|---|---|
+| 🏠 Start (`#/start`) | Daily spielen bzw. Ergebnis mit Teilen/Duell/Countdown, Duell-Einladung, Wochen-Streak |
+| 🎮 Spielen (`#/spielen`) | Alle Modi: Daily, Trophäen-Modus, **Minigames** (`#/minigames`), Training, Endlos |
+| 🏆 Ranglisten (`#/ranglisten/…`) | Trophäen (Welt), Minigames (pro Spiel), Crew (Daily) |
+| 👥 Freunde (`#/freunde`) | Spieler suchen, Anfragen, Freundesliste |
+| 👤 Profil (`#/profil`) | Profilbild, Werte, Profil-Link, Konto (Name, E-Mail, Passwort, Abmelden), Einstellungen |
+
+Oben rechts auf jeder Seite öffnet die **Flamme** den Trophäenpfad (`#/pfad`). Während einer Runde ist die Leiste ausgeblendet.
+
+### Minigames – jedes Spiel einzeln
+
+Unter **Spielen → Minigames** gibt es alle 12 Spiele einzeln. Jedes hat eine Detailseite (Erklärung, „So wird's schwerer“, Bestleistung, Rang, Rangliste) und eine **eigene Rangliste**.
+
+- Ein Lauf geht Stufe für Stufe. Jede Stufe wird schwerer. Ein Fehler oder Zeit um = Lauf vorbei.
+- Kein langes Erklären: nur eine kurze Startkarte „3 · 2 · 1“.
+- Gewertet wird die **geschaffte Stufe**, bei Gleichstand die kürzere Spielzeit, danach wer es früher geschafft hat.
+- Der Server vergibt den Zufalls-Seed und prüft, ob das Ergebnis realistisch ist (`supabase/minigames.sql`).
+
+| Spiel | So wird's schwerer |
+|---|---|
+| 🧠 Merk dir's! | Stufe 1: 3 Felder im 3×3-Feld, jede Stufe +1 Feld; ab Stufe 5 4×4, ab Stufe 10 5×5; Leuchtdauer 600 → 300 ms, ab Stufe 15 kürzere Pausen |
+| 👁️ Finde den Anderen | Raster 3×3 → 8×8 (alle 3 Stufen größer), Farbunterschied 24 % → 4 %, Zeit 3,8 → 2,5 s |
+| 🎯 Stopp im Feld | Strich 6 % schneller pro Stufe, Feld 22 % → 7 % breit, ab Stufe 8 Richtungswechsel, ab 12 springt das Feld |
+| 🚦 Warte auf Grün | Reaktions-Grenze 0,70 → 0,38 s, Wartezeit 1–4 s, ab Stufe 6 gelbe Fake-Signale (immer mehr) |
+| ⚖️ Wo sind mehr? | Unterschied 40 % → 6 %, mehr Punkte, ab Stufe 8 verschiedene Größen, ab 14 drei Felder |
+| 🫧 Alle zerplatzen | 4 → 16 Blasen, weniger Zeit pro Blase, ab Stufe 6 bewegen sie sich, ab 11 rote Blasen (nicht antippen) |
+| 🧮 Stimmt das? | Plus (1–4), Plus/Minus bis 50 (5–8), Mal (9–12), zwei Rechenschritte (ab 13); falsche Ergebnisse immer knapper |
+| 🎨 Farbe, nicht Wort! | 3 → 6 Farben, Zeit 3,4 → 1,8 s, ab Stufe 10 wechseln die Knöpfe den Platz |
+| 👉 Wisch den Pfeil | ab Stufe 3 GEGENTEIL!, ab 8 zwei Pfeile, ab 14 drei; Zeit pro Pfeil 2,9 → 1,1 s |
+| 🔍 Wo ist es? | 12 → 48 Emojis, ab Stufe 7 zum Verwechseln ähnlich, Zeit 4,2 → 3 s |
+| 🥁 Im Takt! | 90 → 180 BPM, Toleranz 180 → 70 ms, ab Stufe 10 vier Vorgabe-Schläge |
+| 🧩 Was kommt dann? | Muster 2 → 3 (ab Stufe 4) → 4 Teile (ab 9), mehr Symbole, ab 12 vier Antworten, Zeit 4,2 → 2,8 s |
+
+Alle Werte stehen in `src/games.ts` (`stage(n)` pro Spiel) und werden in den Tests für die Stufen 1–60 geprüft: Es wird nie leichter, und es gibt feste Grenzen, damit es nie unmöglich wird.
+
 ### Anmeldung
 
-Beim Öffnen erscheint ein Startmenü mit **Anmelden** und **Registrieren** (E-Mail + Passwort, echte Authentifizierung über Supabase Auth). Das Spiel ist erst nach der Anmeldung erreichbar. Die Sitzung bleibt nach dem Neuladen erhalten und wird automatisch erneuert. Abmelden geht über ⚙️ → **Abmelden**.
+Beim Öffnen erscheint ein Startmenü mit **Anmelden** und **Registrieren** (E-Mail + Passwort, echte Authentifizierung über Supabase Auth). Das Spiel ist erst nach der Anmeldung erreichbar. Die Sitzung bleibt nach dem Neuladen erhalten und wird automatisch erneuert. Abmelden geht über den Tab **Profil** → **Abmelden**.
 
 ### Trophäen, Weltrangliste und Freunde
 
-- **Flamme oben links** zeigt den Trophäenstand (z. B. 🔥 2.460) und öffnet den **Trophäenpfad**: ein geschwungener Pfad von 0 bis 20.000 mit Meilensteinen und 8 Ligen (Anfänger, Bronze, Silber, Gold, Platin, Diamant, Meister, Legende).
+- **Flamme oben rechts** zeigt den Trophäenstand (z. B. 🔥 2.460) und öffnet den **Trophäenpfad**: ein geschwungener Pfad von 0 bis 20.000 mit Meilensteinen und 8 Ligen (Anfänger, Bronze, Silber, Gold, Platin, Diamant, Meister, Legende).
 - **Trophäen-Modus**: 15 Aufgaben aus allen Minispielen. Richtig +10, schnell +2, sehr schnell +3, falsch oder Zeit um −8, Serienbonus bei 5/10/15 richtigen am Stück. Schwierigkeit steigt mit dem Trophäenstand.
-- **Weltrangliste** (Tab „Welt“): ausschließlich nach Trophäen absteigend, Top 100, eigener Rang und Nachbarn.
+- **Weltrangliste** (Ranglisten → „Trophäen (Welt)“): ausschließlich nach Trophäen absteigend, Top 100, eigener Rang und Nachbarn.
 - **Freunde**: Spieler über den Namen suchen, Anfragen senden/annehmen/ablehnen, Freunde ansehen und entfernen.
 - Die Trophäen rechnet der **Server** aus (Supabase-Funktionen in `supabase/trophies.sql`), nicht das Handy.
 - Jede Aufgabe hat eine kurze **Orientierungsphase** (0,9–1,8 s), in der die Zeit noch nicht läuft.
-- Beim **ersten Mal** wird jedes Minispiel mindestens **10 Sekunden** erklärt (mit Countdown, nicht wegtippbar). Unter ⚙️ → **Minispiel-Erklärungen wieder zeigen** kommen alle Erklärungen nochmal.
 
 ### Profil
 
-Oben rechts im Hauptmenü sitzt das eigene Profilbild. Ein Tipp darauf öffnet das Profil:
+Der Tab **Profil** zeigt das eigene Profil:
 
 - **Profilbild** aus der eigenen Foto-Mediathek (oder Kamera). Die App schneidet es quadratisch zu und verkleinert es auf ein kleines JPEG (meist unter 30 KB).
 - **Statistiken**: Trophäen, Weltrang, Höchststand, beste Serie, „Dabei seit“.
@@ -131,13 +172,15 @@ src/
   style.css       Design
 supabase/profiles.sql Benutzerprofile (Grundlage für Highscores, Fortschritt usw.)
 supabase/trophies.sql Trophäen, Weltrangliste, Freunde (Funktionen + Sicherheitsregeln)
+supabase/profile.sql  Profilbild und öffentliches Profil (Profil-Links)
+supabase/minigames.sql Minigame-Läufe und Ranglisten pro Spiel
 supabase/schema.sql   Alte Tages-Punkteliste (wird nicht mehr genutzt)
 tests/                Logik-, Bestenlisten- und Browser-Tests
 ```
 
 ### Neue Challenge hinzufügen
 
-In `src/games.ts` ein neues `MicroGame`-Objekt anlegen (mit `prep` = Orientierungszeit in ms und `speed` = Grenzen für den Tempobonus), in `GAMES` eintragen und die ID in `GAME_IDS` (`src/run.ts`) ergänzen. Im Training, Endlos- und Trophäen-Modus ist es dann automatisch dabei. Damit schon gespielte Dailies (und Duelle darauf) unverändert bleiben, `NEW_GAMES_FROM_DAY` bzw. `idsForDay` so anpassen, dass die neue Challenge erst ab der nächsten Daily dabei ist.
+In `src/games.ts` ein neues `MicroGame`-Objekt anlegen (mit `prep` = Orientierungszeit in ms, `speed` = Grenzen für den Tempobonus, `stage(n)` + `monotone` + `progressionText` für den Minigame-Modus), in `GAMES` eintragen und die ID in `GAME_IDS` (`src/run.ts`) ergänzen. Im Training, Endlos- und Trophäen-Modus ist es dann automatisch dabei. Damit schon gespielte Dailies (und Duelle darauf) unverändert bleiben, `NEW_GAMES_FROM_DAY` bzw. `idsForDay` so anpassen, dass die neue Challenge erst ab der nächsten Daily dabei ist.
 
 ## Deployment
 

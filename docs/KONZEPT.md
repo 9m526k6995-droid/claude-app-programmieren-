@@ -30,15 +30,21 @@
 - Kein Account-Zwang, keine Werbung im MVP
 - Keine Dark Patterns bei Benachrichtigungen
 
+## Aufbau seit Oktober 2026
+
+- **Klare Navigation** mit fünf Tabs (Start, Spielen, Ranglisten, Freunde, Profil). Pro Bildschirm gibt es genau einen Hauptknopf, alles andere tritt zurück.
+- **Erklärkarte vor jeder Aufgabe** (4 Sekunden) in den gemischten Modi – niemand verliert, weil er ein Spiel nicht verstanden hat.
+- **Minigames als Einzelspiele**: Jedes der 12 Spiele hat einen Stufen-Lauf, der endlos schwerer wird, und eine eigene Rangliste. Das gibt Spielern mit einem Lieblingsspiel ein langfristiges Ziel („Stufe 20 in Merk dir's!“) und macht neue Rekorde teilbar. Die genaue Progression jedes Spiels steht in der README.
+
 ## Roadmap (Ideen für weitere Modi)
 
 1. **Themenwochen** – z. B. nur Farb-Challenges, nur Mathe, „Chaos-Woche“ mit doppeltem Tempo
 2. **Live-Duell** – zwei Handys, gleiche Runde, gleichzeitig (WebSocket über Supabase Realtime)
 3. **Gruppen/Klassen-Ligen** – private Bestenliste per Einladungscode, Wochensieger
 4. **Creator-Challenges** – Creator erstellen eine eigene Runde und teilen sie mit ihrer Community
-5. **Neue Mini-Challenges** – Memory-Blitz, Rhythmus-Tippen, Formen-Puzzle, Emoji-Suchbild
+5. **Neue Mini-Challenges** – weitere Spiele für Daily und Minigames
 6. **Archiv** – vergangene Dailies nachspielen
-7. **Konten** (optional) – Fortschritt geräteübergreifend, Freundesliste per Benutzername
+7. **Minigame-Wochenranglisten** – jede Woche ein „Spiel der Woche“ mit eigener Wertung
 
 ## Geld verdienen – ohne Manipulation
 

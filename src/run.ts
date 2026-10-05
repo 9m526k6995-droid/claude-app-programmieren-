@@ -20,6 +20,8 @@ export interface RoundSpec {
   gameId: string;
   seed: number;
   level: number;
+  /** Nur im Minigame-Lauf: Stufe 1, 2, 3 … */
+  stage?: number;
 }
 
 /** Reihenfolge: möglichst viele verschiedene Challenges, nie zweimal direkt hintereinander. */

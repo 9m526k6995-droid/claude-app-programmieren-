@@ -70,6 +70,44 @@ export interface ProfileCard extends PlayerInfo {
   relation?: Relation;
 }
 
+// ---------- Minigames ----------
+
+export interface MinigameEntry {
+  rank: number;
+  username: string;
+  league: string;
+  stage: number;
+  ms: number;
+  is_me?: boolean;
+}
+
+export interface MinigameBoard {
+  top: MinigameEntry[];
+  me: MinigameEntry | null;
+  above: MinigameEntry | null;
+  below: MinigameEntry | null;
+  total: number;
+}
+
+export interface MinigameBest {
+  game: string;
+  best_stage: number;
+  best_ms: number;
+  plays: number;
+  rank: number | null;
+}
+
+export interface MinigameFinish {
+  stage: number;
+  total_ms: number;
+  best_stage: number;
+  best_ms: number;
+  plays: number;
+  is_record: boolean;
+  rank: number | null;
+  total_players: number;
+}
+
 export interface FriendsData {
   friends: PlayerInfo[];
   incoming: PlayerInfo[];
@@ -91,8 +129,15 @@ const MESSAGES: Record<string, string> = {
   request_already_sent: "Du hast schon eine Anfrage geschickt.",
   request_not_found: "Diese Anfrage gibt es nicht mehr.",
   not_friends: "Ihr seid nicht befreundet.",
+  unknown_game: "Dieses Minigame gibt es nicht.",
+  run_not_active: "Dieser Lauf wurde schon gewertet.",
+  run_expired: "Der Lauf hat zu lange gedauert und wurde nicht gewertet.",
+  run_too_fast: "Der Lauf war unrealistisch schnell und wurde nicht gewertet.",
+  invalid_stage: "Ungültiges Ergebnis – wurde nicht gewertet.",
+  invalid_time: "Ungültige Zeit – wurde nicht gewertet.",
+  invalid_steps: "Ungültiges Ergebnis – wurde nicht gewertet.",
   avatar_invalid: "Das Bild konnte nicht gespeichert werden. Probier ein anderes Foto.",
-  setup_missing: "Die Datenbank ist noch nicht auf dem neuesten Stand (supabase/trophies.sql oder supabase/profile.sql fehlt).",
+  setup_missing: "Die Datenbank ist noch nicht auf dem neuesten Stand.",
   network: "Keine Verbindung zum Server. Prüfe dein Internet.",
   unknown: "Da ist etwas schiefgelaufen. Bitte versuch es nochmal.",
 };
@@ -141,6 +186,11 @@ export const respondFriendRequest = (name: string, accept: boolean) =>
   call<{ status: string }>("respond_friend_request", { p_username: name, p_accept: accept });
 export const removeFriend = (name: string) => call<{ removed: boolean }>("remove_friend", { p_username: name });
 export const getFriends = () => call<FriendsData>("get_friends");
+export const startMinigameRun = (game: string) => call<{ run_id: string; seed: number }>("start_minigame_run", { p_game: game });
+export const finishMinigameRun = (run: string, stage: number, totalMs: number, steps: { ok: boolean; ms: number }[]) =>
+  call<MinigameFinish>("finish_minigame_run", { p_run: run, p_stage: stage, p_total_ms: totalMs, p_steps: steps });
+export const getMinigameBoard = (game: string, limit = 50) => call<MinigameBoard>("get_minigame_board", { p_game: game, p_limit: limit });
+export const getMyMinigameBests = () => call<MinigameBest[]>("get_my_minigame_bests");
 export const getMyProfileCard = () => call<ProfileCard>("get_my_profile_card");
 export const setAvatar = (avatar: string | null) => call<ProfileCard>("set_avatar", { p_avatar: avatar });
 export const getPlayerProfile = (name: string) => call<ProfileCard>("get_player_profile", { p_username: name });

@@ -53,6 +53,7 @@ Ohne Supabase zeigt die App nur das Startmenü mit einem Hinweis, dass die Anmel
 3. Neue Query, Inhalt von `supabase/schema.sql` einfügen → **Run**. (Alte Tages-Bestenliste, optional.)
 4. Neue Query, Inhalt von `supabase/trophies.sql` einfügen → **Run**. (Trophäen, Weltrangliste, Freunde.)
 5. Neue Query, Inhalt von `supabase/profile.sql` einfügen → **Run**. (Profilbild und öffentliches Profil für Profil-Links.)
+6. Neue Query, Inhalt von `supabase/minigames.sql` einfügen → **Run**. (Minigames als Einzelspiele mit Rangliste pro Spiel.)
 
 ### 3. Anmeldung einstellen
 1. Links **Authentication** → **Sign In / Providers** → **Email**: muss **aktiviert** sein (Standard).

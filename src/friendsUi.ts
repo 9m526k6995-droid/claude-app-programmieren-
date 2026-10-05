@@ -16,7 +16,8 @@ import {
 import { playerModal } from "./trophyUi";
 
 export interface FriendsHandlers {
-  onBack: () => void;
+  /** Ohne onBack wird die Liste ohne eigene Kopfzeile eingebaut (Tab „Freunde“) */
+  onBack?: () => void;
   hasName: () => boolean;
   askName: (then: () => void) => void;
 }
@@ -30,15 +31,19 @@ function who(p: PlayerInfo, extra = ""): string {
 
 export function renderFriends(app: HTMLElement, h: FriendsHandlers) {
   app.innerHTML = `
-  <div class="screen friends">
-    <header class="topbar">
+  <div class="${h.onBack ? "screen " : ""}friends">
+    ${
+      h.onBack
+        ? `<header class="topbar">
       <button class="icon-btn" data-f="back" aria-label="Zurück">←</button>
       <span class="mode-tag">Freunde</span>
       <span class="icon-btn ghost-slot"></span>
-    </header>
+    </header>`
+        : ""
+    }
     ${h.hasName() ? "" : `<button class="name-banner" data-f="name"><b>Wähle zuerst deinen Spielernamen</b><span>Damit dich Freunde finden können →</span></button>`}
     <div class="fr-search">
-      <label class="lbl" for="fr-q">Spieler suchen</label>
+      <h2 class="sec-title"><label for="fr-q">Spieler suchen</label></h2>
       <input id="fr-q" type="search" placeholder="Spielername eingeben" autocomplete="off" autocapitalize="off" spellcheck="false" enterkeyhint="search">
       <div id="fr-results" class="list" aria-live="polite"></div>
     </div>
@@ -48,7 +53,7 @@ export function renderFriends(app: HTMLElement, h: FriendsHandlers) {
   const body = app.querySelector<HTMLElement>("#fr-body")!;
   const results = app.querySelector<HTMLElement>("#fr-results")!;
   const q = app.querySelector<HTMLInputElement>("#fr-q")!;
-  app.querySelector('[data-f="back"]')!.addEventListener("click", h.onBack);
+  if (h.onBack) app.querySelector('[data-f="back"]')!.addEventListener("click", h.onBack);
   app.querySelector('[data-f="name"]')?.addEventListener("click", () => h.askName(() => renderFriends(app, h)));
 
   const needName = (then: () => void) => {
