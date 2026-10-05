@@ -59,6 +59,17 @@ export interface SearchHit extends PlayerInfo {
   relation: "none" | "friend" | "outgoing" | "incoming";
 }
 
+export type Relation = "self" | "none" | "friend" | "outgoing" | "incoming";
+
+/** Profil-Karte: eigenes oder öffentliches Profil inkl. Bild (supabase/profile.sql). */
+export interface ProfileCard extends PlayerInfo {
+  username: string;
+  best_trophies?: number;
+  avatar: string | null;
+  member_since?: string;
+  relation?: Relation;
+}
+
 export interface FriendsData {
   friends: PlayerInfo[];
   incoming: PlayerInfo[];
@@ -80,7 +91,8 @@ const MESSAGES: Record<string, string> = {
   request_already_sent: "Du hast schon eine Anfrage geschickt.",
   request_not_found: "Diese Anfrage gibt es nicht mehr.",
   not_friends: "Ihr seid nicht befreundet.",
-  setup_missing: "Die Datenbank ist noch nicht auf dem neuesten Stand (supabase/trophies.sql fehlt).",
+  avatar_invalid: "Das Bild konnte nicht gespeichert werden. Probier ein anderes Foto.",
+  setup_missing: "Die Datenbank ist noch nicht auf dem neuesten Stand (supabase/trophies.sql oder supabase/profile.sql fehlt).",
   network: "Keine Verbindung zum Server. Prüfe dein Internet.",
   unknown: "Da ist etwas schiefgelaufen. Bitte versuch es nochmal.",
 };
@@ -129,6 +141,9 @@ export const respondFriendRequest = (name: string, accept: boolean) =>
   call<{ status: string }>("respond_friend_request", { p_username: name, p_accept: accept });
 export const removeFriend = (name: string) => call<{ removed: boolean }>("remove_friend", { p_username: name });
 export const getFriends = () => call<FriendsData>("get_friends");
+export const getMyProfileCard = () => call<ProfileCard>("get_my_profile_card");
+export const setAvatar = (avatar: string | null) => call<ProfileCard>("set_avatar", { p_avatar: avatar });
+export const getPlayerProfile = (name: string) => call<ProfileCard>("get_player_profile", { p_username: name });
 
 // ---------- Zwischenspeicher für die Flamme (zeigt sofort den letzten bekannten Stand) ----------
 
@@ -168,4 +183,33 @@ export async function refreshProfile(userId: string | undefined): Promise<MyProf
   const p = await getMyProfile();
   setCachedProfile(userId, p);
   return p;
+}
+
+// ---------- Eigenes Profilbild (Anzeige-Cache für den Profil-Knopf oben) ----------
+
+const AVATAR_KEY = "zwip:avatar";
+
+export function cachedAvatar(userId: string | undefined): string | null {
+  try {
+    const raw = localStorage.getItem(AVATAR_KEY);
+    const v = raw ? (JSON.parse(raw) as { uid: string; a: string | null }) : null;
+    return v && v.uid === userId ? v.a : null;
+  } catch {
+    return null;
+  }
+}
+
+export function setCachedAvatar(userId: string | undefined, avatar: string | null) {
+  try {
+    if (userId && avatar) localStorage.setItem(AVATAR_KEY, JSON.stringify({ uid: userId, a: avatar }));
+    else localStorage.removeItem(AVATAR_KEY);
+  } catch {
+    /* Speicher voll oder privat – dann eben ohne Cache */
+  }
+  avatarListeners.forEach((fn) => fn(avatar));
+}
+
+const avatarListeners: ((a: string | null) => void)[] = [];
+export function onAvatarChange(fn: (a: string | null) => void) {
+  avatarListeners.push(fn);
 }

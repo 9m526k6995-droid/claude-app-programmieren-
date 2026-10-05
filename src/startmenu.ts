@@ -12,6 +12,9 @@ export interface StartMenuHooks {
   onSignedIn: (fresh: boolean) => void;
   /** Kurzer Hinweis über dem Spiel (z. B. "Ein Freund fordert dich heraus") */
   banner?: string;
+  /** Symbol und Unterzeile für das Banner (Standard: Duell) */
+  bannerIcon?: string;
+  bannerSub?: string;
 }
 
 export function renderStart(app: HTMLElement, hooks: StartMenuHooks) {
@@ -21,7 +24,7 @@ export function renderStart(app: HTMLElement, hooks: StartMenuHooks) {
       ${LOGO}
       <p class="tagline">10 Blitz-Challenges · 30 Sekunden · jeden Tag neu</p>
     </div>
-    ${hooks.banner ? `<div class="duel-card pop-in"><div class="duel-ico">⚔️</div><div>${hooks.banner}<br><span class="muted">Melde dich an, um anzutreten.</span></div></div>` : ""}
+    ${hooks.banner ? `<div class="duel-card pop-in"><div class="duel-ico">${hooks.bannerIcon ?? "⚔️"}</div><div>${hooks.banner}<br><span class="muted">${hooks.bannerSub ?? "Melde dich an, um anzutreten."}</span></div></div>` : ""}
     <div class="start-actions">
       <button class="btn primary big" data-auth="login" type="button">Anmelden</button>
       <button class="btn big" data-auth="register" type="button">Registrieren</button>

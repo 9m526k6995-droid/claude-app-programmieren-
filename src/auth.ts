@@ -28,6 +28,9 @@ export type AuthErrorCode =
   | "email_taken"
   | "email_not_confirmed"
   | "rate_limited"
+  | "wrong_password"
+  | "same_password"
+  | "reauth_needed"
   | "network"
   | "unknown";
 
@@ -110,6 +113,9 @@ const MESSAGES: Record<AuthErrorCode, string> = {
   email_taken: "Mit dieser E-Mail gibt es schon einen Account. Melde dich stattdessen an.",
   email_not_confirmed: "Bitte bestätige zuerst deine E-Mail-Adresse. Schau in dein Postfach (auch im Spam-Ordner).",
   rate_limited: "Zu viele Versuche. Warte kurz und probier es dann nochmal.",
+  wrong_password: "Dein aktuelles Passwort stimmt nicht.",
+  same_password: "Das neue Passwort muss anders sein als das alte.",
+  reauth_needed: "Aus Sicherheitsgründen bitte einmal ab- und wieder anmelden, dann klappt das Ändern.",
   network: "Keine Verbindung zum Server. Prüfe dein Internet und versuch es nochmal.",
   unknown: "Da ist etwas schiefgelaufen. Bitte versuch es nochmal.",
 };
@@ -130,6 +136,8 @@ function mapError(status: number, body: Record<string, unknown>): AuthErrorCode 
   if (code === "invalid_credentials" || code === "invalid_grant" || msg.includes("invalid login credentials")) return "invalid_credentials";
   if (code === "user_already_exists" || code === "email_exists" || msg.includes("already registered")) return "email_taken";
   if (code === "email_not_confirmed" || msg.includes("email not confirmed")) return "email_not_confirmed";
+  if (code === "same_password" || msg.includes("should be different")) return "same_password";
+  if (code === "reauthentication_needed" || code === "reauthentication_not_valid") return "reauth_needed";
   if (code === "weak_password" || msg.includes("password should")) return "weak_password";
   if (code === "email_address_invalid" || code === "validation_failed" || msg.includes("invalid format") || msg.includes("email address")) return "invalid_email";
   return "unknown";
@@ -137,12 +145,12 @@ function mapError(status: number, body: Record<string, unknown>): AuthErrorCode 
 
 // ---------- API ----------
 
-async function call(path: string, body: unknown, token?: string): Promise<Record<string, unknown>> {
+async function call(path: string, body: unknown, token?: string, method = "POST"): Promise<Record<string, unknown>> {
   if (!authConfigured) fail("not_configured");
   let res: Response;
   try {
     res = await fetch(`${CONFIG.supabaseUrl}/auth/v1${path}`, {
-      method: "POST",
+      method,
       headers: {
         apikey: CONFIG.supabaseAnonKey,
         "Content-Type": "application/json",
@@ -204,6 +212,29 @@ export async function signIn(email: string, password: string): Promise<Session> 
   if (!s) fail("unknown");
   setSession(s);
   return s;
+}
+
+/**
+ * Passwort ändern. Prüft zuerst das aktuelle Passwort (wie eine erneute Anmeldung),
+ * damit niemand an einem kurz liegengelassenen Handy das Passwort ändern kann.
+ */
+export async function changePassword(current: string, next: string, confirm: string): Promise<void> {
+  const s = session;
+  if (!s) fail("invalid_credentials");
+  if (!current) fail("wrong_password");
+  if (next.length < MIN_PASSWORD) fail("weak_password");
+  if (next !== confirm) fail("password_mismatch");
+  if (next === current) fail("same_password");
+  let fresh: Session | null;
+  try {
+    fresh = toSession(await call("/token?grant_type=password", { email: s.user.email, password: current }));
+  } catch (e) {
+    if (e instanceof AuthError && e.code === "invalid_credentials") fail("wrong_password");
+    throw e;
+  }
+  if (!fresh) fail("unknown");
+  setSession(fresh);
+  await call("/user", { password: next }, fresh.accessToken, "PUT");
 }
 
 let refreshing: Promise<Session | null> | null = null;

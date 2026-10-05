@@ -52,6 +52,7 @@ Ohne Supabase zeigt die App nur das Startmenü mit einem Hinweis, dass die Anmel
 2. Inhalt von `supabase/profiles.sql` einfügen → **Run**. (Benutzerprofile, die automatisch bei jeder Registrierung entstehen.)
 3. Neue Query, Inhalt von `supabase/schema.sql` einfügen → **Run**. (Alte Tages-Bestenliste, optional.)
 4. Neue Query, Inhalt von `supabase/trophies.sql` einfügen → **Run**. (Trophäen, Weltrangliste, Freunde.)
+5. Neue Query, Inhalt von `supabase/profile.sql` einfügen → **Run**. (Profilbild und öffentliches Profil für Profil-Links.)
 
 ### 3. Anmeldung einstellen
 1. Links **Authentication** → **Sign In / Providers** → **Email**: muss **aktiviert** sein (Standard).

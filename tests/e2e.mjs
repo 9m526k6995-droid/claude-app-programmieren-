@@ -35,7 +35,7 @@ function psqlFile(file, db = DB) {
     process.exit(1);
   }
   psql(`create database ${DB}`, "postgres");
-  for (const f of ["tests/sql/supabase-shim.sql", "supabase/profiles.sql", "supabase/schema.sql", "supabase/trophies.sql"]) psqlFile(f);
+  for (const f of ["tests/sql/supabase-shim.sql", "supabase/profiles.sql", "supabase/schema.sql", "supabase/trophies.sql", "supabase/profile.sql"]) psqlFile(f);
 }
 const lit = (v) =>
   v === null || v === undefined
@@ -131,6 +131,15 @@ async function handleApi(req, res, url) {
     res.writeHead(204).end();
     return;
   }
+  if (p === "/auth/v1/user" && req.method === "PUT") {
+    const u = mock.access.get((req.headers.authorization || "").replace("Bearer ", ""));
+    if (!u) return json(res, 401, { code: 401, msg: "invalid JWT" });
+    const { password } = await readBody(req);
+    if (password === u.password) return json(res, 422, { code: 422, error_code: "same_password", msg: "New password should be different from the old password." });
+    u.password = password;
+    mock.passwordChanges = (mock.passwordChanges || 0) + 1;
+    return json(res, 200, { id: u.id, email: u.email });
+  }
   if (p === "/auth/v1/user") {
     const u = mock.access.get((req.headers.authorization || "").replace("Bearer ", ""));
     return u ? json(res, 200, { id: u.id, email: u.email }) : json(res, 401, { code: 401, msg: "invalid JWT" });
@@ -222,6 +231,11 @@ async function center(page, handleFn) {
     const b = el.getBoundingClientRect();
     return { x: b.left + b.width / 2, y: b.top + b.height / 2 };
   }, handleFn.toString());
+}
+
+async function stageCenterOf(page, sel) {
+  const b = await page.locator(sel).boundingBox();
+  return { x: b.x + b.width / 2, y: b.y + b.height / 2 };
 }
 
 async function stageCenter(page) {
@@ -563,10 +577,29 @@ try {
   const fState = await B.page.evaluate(() => [...document.querySelectorAll(".tile b")].map((b) => Number(b.textContent)));
   check(fState.every((p) => p === 0), `Falsche Antworten geben 0 Punkte (${fState.join("/")})`);
 
-  // 9) Training startet, Abbrechen funktioniert
-  await B.page.click('.actions-2 [data-act="home"]', { force: true });
+  // 9) Erklärung beim ersten Mal: läuft durch, lässt sich nicht wegtippen, kommt per Einstellung wieder
+  await B.page.goto(`${BASE}?e2e=1&explain=3000`);
+  await B.page.waitForSelector('[data-act="free"]');
+  await openSettings(B.page);
+  await B.page.click("#set-explain", { force: true });
+  check((await B.page.textContent("#set-explain")).includes("kommen wieder"), "Einstellung: Erklärungen wieder anzeigen");
+  await B.page.click("#set-save", { force: true });
   await B.page.click('[data-act="free"]', { force: true });
-  await B.page.waitForSelector(".intro");
+  await B.page.waitForSelector(".intro.explain");
+  const exText = await B.page.textContent(".explain-text");
+  check(exText.length >= 60, `Ausführliche Erklärung wird gezeigt („${exText.slice(0, 40)}…“)`);
+  const exStart = Number(await B.page.textContent(".explain-n"));
+  check(exStart === 3, `Countdown startet bei der eingestellten Dauer (${exStart} s)`);
+  const ic = await stageCenterOf(B.page, ".intro");
+  await B.page.mouse.click(ic.x, ic.y);
+  await B.page.waitForTimeout(1300);
+  check(await B.page.isVisible(".intro.explain"), "Erklärung lässt sich nicht vorzeitig wegtippen");
+  check(Number(await B.page.textContent(".explain-n")) < exStart, "Countdown läuft herunter");
+  await B.page.screenshot({ path: `${SHOTS}/2-explain.png` });
+  await B.page.waitForSelector(".intro.explain", { state: "detached", timeout: 4000 });
+  check(true, "Nach Ablauf startet das Minispiel automatisch");
+
+  // Training startet, Abbrechen funktioniert
   await B.page.click('[data-act="quit"]', { force: true });
   await B.page.waitForSelector(".home", { timeout: 4000 });
   check(true, "Training lässt sich abbrechen");
@@ -762,11 +795,115 @@ try {
   await tP.waitForFunction(() => !document.querySelector('[data-friend="Tom"]'), null, { timeout: 5000 });
   check(dbVal("select count(*) from public.friendships") === "0", "Freund entfernt (auch in der Datenbank)");
 
+  // ================= PROFIL =================
+  await tP.goto(`${BASE}?e2e=1`);
+  await tP.waitForSelector('[data-act="profile"]');
+  await tP.click('[data-act="profile"]', { force: true });
+  await tP.waitForFunction(() => document.querySelector(".pf-head h3")?.textContent === "Lena", null, { timeout: 5000 });
+  check(true, "Profil-Popup öffnet sich mit Spielername");
+  const profLink = (await tP.textContent(".pf-url-text")).trim();
+  check(profLink.endsWith("?p=Lena"), `Profil zeigt Direktlink (${profLink})`);
+  check((await tP.textContent(".pf-stats")).includes("Höchststand"), "Profil zeigt Statistiken");
+  await tP.click('[data-pf="copy"]', { force: true });
+  await tP.waitForSelector(".toast");
+  const clip = await tP.evaluate(() => navigator.clipboard.readText()).catch(() => "");
+  check(clip === `${BASE}?p=Lena`, `Link kopiert: ${clip}`);
+  await tP.screenshot({ path: `${SHOTS}/p1-profile.png` });
+
+  // Profilbild aus der Mediathek (Dateiauswahl)
+  const photo = await tP.evaluate(() => {
+    const c = document.createElement("canvas");
+    c.width = 900;
+    c.height = 600;
+    const x = c.getContext("2d");
+    const g = x.createLinearGradient(0, 0, 900, 600);
+    g.addColorStop(0, "#ff3d8b");
+    g.addColorStop(1, "#3d7bff");
+    x.fillStyle = g;
+    x.fillRect(0, 0, 900, 600);
+    x.fillStyle = "#fff";
+    x.beginPath();
+    x.arc(450, 300, 160, 0, Math.PI * 2);
+    x.fill();
+    return c.toDataURL("image/png").split(",")[1];
+  });
+  await tP.setInputFiles("#pf-file", { name: "IMG_0042.png", mimeType: "image/png", buffer: Buffer.from(photo, "base64") });
+  await tP.waitForFunction(() => document.querySelector(".toast")?.textContent.includes("Profilbild gespeichert"), null, { timeout: 8000 });
+  check(dbVal("select left(avatar, 23) from public.profiles where username = 'Lena'") === "data:image/jpeg;base64,", "Profilbild als kleines JPEG in der Datenbank");
+  const avLen = Number(dbVal("select length(avatar) from public.profiles where username = 'Lena'"));
+  check(avLen > 1000 && avLen < 150000, `Profilbild ist klein (${Math.round(avLen / 1024)} KB)`);
+  check((await tP.locator(".pf-avatar img").count()) === 1, "Profilbild erscheint sofort im Profil");
+  check((await tP.locator('[data-pf="remove"]').count()) === 1, "Profilbild kann wieder entfernt werden");
+  await tP.screenshot({ path: `${SHOTS}/p2-profile-photo.png` });
+
+  // Kaputte Datei
+  await tP.setInputFiles("#pf-file", { name: "notiz.txt", mimeType: "text/plain", buffer: Buffer.from("hallo") });
+  await tP.waitForSelector(".pf .inline-error", { timeout: 5000 });
+  check((await tP.textContent(".pf .inline-error")).includes("Foto"), "Keine Bilddatei → verständliche Meldung");
+
+  // Passwort ändern
+  await tP.click('[data-pf="password"]', { force: true });
+  await tP.waitForSelector("#pw-current");
+  await tP.fill("#pw-current", "falsch123");
+  await tP.fill("#pw-new", "neuesPasswort1");
+  await tP.fill("#pw-new2", "neuesPasswort1");
+  await tP.click("#pw-save", { force: true });
+  await tP.waitForSelector(".pf-pw .auth-error:not([hidden])");
+  check((await tP.textContent(".pf-pw .auth-error")).includes("aktuelles Passwort"), "Falsches aktuelles Passwort wird erkannt");
+  await tP.fill("#pw-current", "geheim123");
+  await tP.fill("#pw-new2", "neuesPasswort2");
+  await tP.click("#pw-save", { force: true });
+  await tP.waitForFunction(() => document.querySelector(".pf-pw .auth-error")?.textContent.includes("stimmen nicht"), null, { timeout: 5000 });
+  check(true, "Neue Passwörter müssen übereinstimmen");
+  await tP.screenshot({ path: `${SHOTS}/p3-password.png` });
+  await tP.fill("#pw-new2", "neuesPasswort1");
+  await tP.click("#pw-save", { force: true });
+  await tP.waitForFunction(() => document.querySelector(".toast")?.textContent.includes("Passwort geändert"), null, { timeout: 5000 });
+  check(mock.users.get("lena@test.de").password === "neuesPasswort1", "Passwort beim Auth-Server geändert");
+  await tP.click(".modal [data-close]", { force: true });
+  await tP.waitForSelector(".modal", { state: "detached" });
+  check((await tP.locator(".top-avatar img").count()) === 1, "Profilbild auch oben im Hauptmenü");
+  await tP.screenshot({ path: `${SHOTS}/p4-home-avatar.png` });
+
+  // Mit neuem Passwort anmelden
+  await openSettings(tP);
+  await tP.click("#set-logout", { force: true });
+  await tP.waitForSelector('[data-auth="login"]', { timeout: 5000 });
+  await tP.click('[data-auth="login"]', { force: true });
+  await fillAuth(tP, "lena@test.de", "geheim123");
+  check((await authError(tP)).includes("falsch"), "Altes Passwort funktioniert nicht mehr");
+  await fillAuth(tP, "lena@test.de", "neuesPasswort1");
+  await tP.waitForSelector('[data-act="profile"]', { timeout: 5000 });
+  check(true, "Anmeldung mit neuem Passwort");
+
+  // Direktlink öffnen (Tom öffnet Lenas Link)
+  await fB.goto(`${BASE}?e2e=1&p=Lena`);
+  await fB.waitForFunction(() => document.querySelector(".pf-head h3")?.textContent === "Lena", null, { timeout: 6000 });
+  check(true, "Direktlink öffnet das Profil von Lena");
+  check(!fB.url().includes("p=Lena"), "Link-Parameter verschwindet aus der Adresszeile");
+  check((await fB.locator(".pf-avatar img").count()) === 1, "Fremdes Profil zeigt das Profilbild");
+  check(!(await fB.content()).includes("lena@test.de"), "Fremdes Profil zeigt keine E-Mail");
+  await fB.screenshot({ path: `${SHOTS}/p5-link-profile.png` });
+  await fB.click('[data-pp="add"]', { force: true });
+  await fB.waitForSelector(".pf-state", { timeout: 5000 });
+  check((await fB.textContent(".pf-state")).includes("Anfrage gesendet"), "Freund direkt aus dem Profil-Link hinzufügen");
+  await fB.goto(`${BASE}?e2e=1&p=Gibtsnicht`);
+  await fB.waitForSelector(".pf .inline-error", { timeout: 5000 });
+  check((await fB.textContent(".pf")).includes("nicht gefunden"), "Unbekannter Profil-Link → freundliche Meldung");
+
+  // Eigener Link öffnet das eigene Profil
+  await tP.goto(`${BASE}?e2e=1&p=lena`);
+  await tP.waitForSelector('[data-pf="password"]', { timeout: 6000 });
+  check(true, "Eigener Link öffnet das eigene Profil");
+
   // 10) Kaputter Link wird abgefangen
   const C = await newPage();
   await C.page.goto(`${BASE}?c=kaputt123&e2e=1`);
   await C.page.waitForSelector(".toast");
   check((await C.page.textContent(".toast")).includes("kaputt"), "Kaputter Duell-Link → freundliche Meldung");
+  await C.page.goto(`${BASE}?p=Lena&e2e=1`);
+  await C.page.waitForSelector(".duel-card");
+  check((await C.page.textContent(".duel-card")).includes("Profil von Lena"), "Profil-Link ohne Anmeldung: Hinweis im Startmenü");
 
   // 11) Gleiche Daily für alle
   const aDaily = Object.values(st.daily)[0];

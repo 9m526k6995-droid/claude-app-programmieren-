@@ -16,7 +16,8 @@ import {
   type League,
   type RoundScore,
 } from "./trophies";
-import { setUsername, SocialError, type MyProfile, type PlayerInfo, type RoundFinish, type TrophyBoard } from "./social";
+import { setUsername, getPlayerProfile, SocialError, type MyProfile, type PlayerInfo, type RoundFinish, type TrophyBoard } from "./social";
+import { avatarHtml, profileLink, shareLink, memberSince } from "./profileKit";
 
 export function leagueBadge(id: string | League, cls = ""): string {
   const l = typeof id === "string" ? leagueById(id) : id;
@@ -344,9 +345,10 @@ export function playerModal(
   const l = leagueById(p.league);
   modal(
     `<div class="pm-head" style="--lc:${l.color}">
-       <div class="pm-avatar" aria-hidden="true">${esc(p.username.slice(0, 1).toUpperCase())}</div>
+       ${avatarHtml(p.username, null)}
        <h3>${esc(p.username)}</h3>
        ${leagueBadge(l)}
+       <small class="muted pf-since" hidden></small>
      </div>
      <dl class="pm-stats">
        <div><dt>Trophäen</dt><dd>${formatTrophies(p.trophies)} 🏆</dd></div>
@@ -355,8 +357,26 @@ export function playerModal(
        <div><dt>Trophäen-Runden</dt><dd>${p.trophy_rounds ?? 0}</dd></div>
      </dl>
      ${opts.action ? `<button class="btn ${opts.action.danger ? "ghost danger" : "primary"}" id="pm-action" type="button">${esc(opts.action.label)}</button>` : ""}
-     <button class="btn ghost" data-close type="button">Schließen</button>`,
+     <div class="actions-row">
+       <button class="btn sm" id="pm-share" type="button">Profil teilen 🔗</button>
+       <button class="btn ghost sm" data-close type="button">Schließen</button>
+     </div>`,
     (el, close) => {
+      el.querySelector("#pm-share")!.addEventListener("click", () =>
+        void shareLink(profileLink(p.username), `Schau dir ${p.username} auf ZWIP an ⚡`),
+      );
+      // Profilbild und "Dabei seit" nachladen (Listen liefern bewusst keine Bilder mit)
+      getPlayerProfile(p.username)
+        .then((full) => {
+          if (!el.isConnected) return;
+          if (full.avatar) el.querySelector(".pm-avatar")!.outerHTML = avatarHtml(full.username, full.avatar);
+          const since = el.querySelector<HTMLElement>(".pf-since")!;
+          since.textContent = memberSince(full.member_since);
+          since.hidden = !since.textContent;
+        })
+        .catch(() => {
+          /* ohne Bild ist auch okay */
+        });
       const btn = el.querySelector<HTMLButtonElement>("#pm-action");
       let armed = !opts.action?.confirm;
       btn?.addEventListener("click", async () => {

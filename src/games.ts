@@ -30,10 +30,15 @@ export interface Mounted {
   hideTimer?: boolean;
 }
 
+/** So lange (ms) wird ein Minispiel beim ersten Mal erklärt, bevor es losgeht. */
+export const EXPLAIN_MS = 10_000;
+
 export interface MicroGame {
   id: string;
   title: string;
   hint: string;
+  /** Ausführliche Erklärung (2–3 kurze Sätze), wird beim ersten Mal mindestens EXPLAIN_MS lang gezeigt. */
+  howto: string;
   emoji: string;
   bg: string;
   /**
@@ -88,6 +93,7 @@ const odd: MicroGame = {
   id: "odd",
   title: "Finde den Anderen",
   hint: "Ein Feld ist anders. Tippen!",
+  howto: "Du siehst lauter Felder in fast derselben Farbe. Genau eins ist ein kleines bisschen heller oder dunkler. Tipp genau dieses Feld an – je schneller, desto mehr Punkte.",
   emoji: "👁️",
   bg: "linear-gradient(160deg,#6a2cff,#b83dff)",
   prep: 1200,
@@ -132,6 +138,7 @@ const stop: MicroGame = {
   id: "stop",
   title: "Stopp im Feld",
   hint: "Tippen, wenn der Strich im Feld ist",
+  howto: "Ein Strich saust auf einem Balken hin und her. Irgendwo auf dem Balken ist ein hellgrünes Feld. Tipp genau dann, wenn der Strich mitten in diesem Feld ist.",
   emoji: "🎯",
   bg: "linear-gradient(160deg,#ff3d6e,#ff8a3d)",
   prep: 1000,
@@ -184,6 +191,7 @@ const wait: MicroGame = {
   id: "wait",
   title: "Warte auf Grün",
   hint: "Zu früh tippen = raus",
+  howto: "Der Bildschirm ist erst rot – jetzt nicht tippen! Sobald er grün wird, tippst du so schnell du kannst. Wer zu früh tippt, hat verloren.",
   emoji: "🚦",
   bg: "#1c1530",
   prep: 0,
@@ -223,6 +231,7 @@ const more: MicroGame = {
   id: "more",
   title: "Wo sind mehr?",
   hint: "Tipp die Seite mit mehr Punkten",
+  howto: "Links und rechts liegen Punkte. Tipp die Seite, auf der mehr Punkte sind. Nicht zählen, einfach schätzen – sonst wird die Zeit knapp.",
   emoji: "⚖️",
   bg: "linear-gradient(160deg,#0fb39a,#25d9e8)",
   prep: 1300,
@@ -271,6 +280,7 @@ const pop: MicroGame = {
   id: "pop",
   title: "Alle zerplatzen",
   hint: "Tipp jede Blase weg",
+  howto: "Auf dem Bildschirm tauchen Blasen auf. Tipp jede einzelne Blase weg, bis keine mehr übrig ist. Die Zeit läuft oben im Balken ab.",
   emoji: "🫧",
   bg: "radial-gradient(120% 90% at 50% 0%,#4a2a7a,#1c1530)",
   prep: 900,
@@ -306,6 +316,7 @@ const sum: MicroGame = {
   id: "sum",
   title: "Stimmt das?",
   hint: "✓ oder ✗ – schnell!",
+  howto: "Du siehst eine Rechnung mit Ergebnis, zum Beispiel 7 + 5 = 12. Stimmt das Ergebnis, tippst du ✓. Ist es falsch, tippst du ✗.",
   emoji: "🧮",
   bg: "linear-gradient(160deg,#2f6bff,#6a2cff)",
   prep: 1500,
@@ -372,6 +383,7 @@ const ink: MicroGame = {
   id: "ink",
   title: "Farbe, nicht Wort!",
   hint: "Welche FARBE hat das Wort?",
+  howto: "Ein Farbwort steht da, zum Beispiel ROT – aber in einer anderen Farbe geschrieben. Tipp die Farbe, in der das Wort geschrieben ist. Was da steht, ist egal!",
   emoji: "🎨",
   bg: "linear-gradient(160deg,#ffd23d,#ff8a3d)",
   prep: 1300,
@@ -419,6 +431,7 @@ const swipe: MicroGame = {
   id: "swipe",
   title: "Wisch den Pfeil",
   hint: "In Pfeilrichtung wischen",
+  howto: "Ein Pfeil zeigt in eine Richtung. Wisch mit dem Finger genau in diese Richtung. Steht GEGENTEIL! darüber, wischst du genau andersrum.",
   emoji: "👉",
   bg: "linear-gradient(160deg,#22c36b,#0fb39a)",
   prep: 900,
@@ -491,6 +504,7 @@ const find: MicroGame = {
   id: "find",
   title: "Wo ist es?",
   hint: "Finde das Emoji von oben",
+  howto: "Oben siehst du ein Emoji. Darunter ist ein wildes Gewimmel aus vielen Emojis. Finde dasselbe Emoji darin und tipp es an.",
   emoji: "🔍",
   bg: "linear-gradient(160deg,#25d9e8,#3d7bff)",
   prep: 1800,
@@ -539,6 +553,7 @@ const memory: MicroGame = {
   id: "memory",
   title: "Merk dir's!",
   hint: "Schau zu – dann in gleicher Reihenfolge tippen",
+  howto: "Ein paar Felder leuchten nacheinander auf. Schau genau hin und merk dir die Reihenfolge. Danach tippst du die Felder genau so nach.",
   emoji: "🧠",
   bg: "linear-gradient(160deg,#a45cff,#ff3d8b)",
   prep: 0,
@@ -618,6 +633,7 @@ const beat: MicroGame = {
   id: "beat",
   title: "Im Takt!",
   hint: "Tipp den 4. Schlag genau im Takt",
+  howto: "Es kommen drei Schläge im gleichen Takt – du siehst und hörst sie. Den vierten Schlag tippst du selbst, genau im Takt. Zu früh oder zu spät kostet Punkte.",
   emoji: "🥁",
   bg: "radial-gradient(120% 90% at 50% 0%,#2a3fa0,#121633)",
   prep: 0,
@@ -694,6 +710,7 @@ const pattern: MicroGame = {
   id: "pattern",
   title: "Was kommt dann?",
   hint: "Setz das Muster fort",
+  howto: "Oben steht eine Reihe Symbole, die sich nach einem Muster wiederholt. Am Ende ist ein Fragezeichen. Tipp unten das Symbol, das als Nächstes kommt.",
   emoji: "🧩",
   bg: "linear-gradient(160deg,#c6ff3d,#22c36b)",
   prep: 1600,

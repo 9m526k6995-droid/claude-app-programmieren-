@@ -3,6 +3,7 @@ import assert from "node:assert/strict";
 import { makeRng, dayIndex, daySeed, dateOfDay } from "../src/rng";
 import { buildRounds, endlessRound, roundPoints, tileOf, GAME_IDS, CLASSIC_IDS, ROUNDS, idsForDay, NEW_GAMES_FROM_DAY } from "../src/run";
 import { freshState, recordDaily, currentStreak, addCrewResult } from "../src/state";
+import { profileLink, avatarHtml, memberSince } from "../src/profileKit";
 import { encodeChallenge, decodeChallenge, extractChallengeCode, gridText, shareText, buildLink } from "../src/share";
 
 test("gleicher Seed → gleiche Zahlenfolge", () => {
@@ -134,7 +135,7 @@ test("Neue Challenges erst ab Daily #5 – alte Dailies und Duelle bleiben ident
 
 // ---------- Trophäen ----------
 import { scoreRound, leagueFor, milestoneProgress, MILESTONES, clampTrophies, difficultyRange, levelFor, tierFor, formatTrophies, LEAGUES } from "../src/trophies";
-import { GAMES } from "../src/games";
+import { GAMES, EXPLAIN_MS } from "../src/games";
 
 const tasks = (ok: number, tier: 0 | 1 | 2, wrong: number) => [
   ...Array.from({ length: ok }, () => ({ game: "odd", ok: true, timeout: false, tier, ms: 500 })),
@@ -192,4 +193,25 @@ test("Speed-Stufen und Registry: jedes Minispiel hat Vorbereitung + Tempo-Grenze
   }
   // Spiele mit eigener Reaktionsmechanik bekommen keine Vorbereitungszeit
   for (const id of ["wait", "beat", "memory"]) assert.equal(GAMES.find((g) => g.id === id)!.prep, 0);
+});
+
+test("Jedes Minispiel wird beim ersten Mal mindestens 10 Sekunden erklärt", () => {
+  assert.ok(EXPLAIN_MS >= 10_000, `EXPLAIN_MS = ${EXPLAIN_MS}`);
+  for (const g of GAMES) {
+    assert.ok(g.howto.length >= 60, `${g.id}: Erklärung zu kurz`);
+    assert.ok(!/[<>]/.test(g.howto), `${g.id}: kein HTML in der Erklärung`);
+  }
+});
+
+test("Profil-Link und Profilbild-Anzeige", () => {
+  (globalThis as unknown as { window: unknown }).window = { location: { protocol: "https:", href: "https://zwip.app/?c=abc#x" } };
+  assert.equal(profileLink("Lena_1"), "https://zwip.app/?p=Lena_1");
+  assert.match(avatarHtml("lena", null), />L</);
+  const img = "data:image/jpeg;base64,AAAA";
+  assert.match(avatarHtml("lena", img), /<img src="data:image\/jpeg;base64,AAAA"/);
+  // Alles, was kein echtes Bild ist, wird nicht als Bild eingebaut
+  assert.doesNotMatch(avatarHtml("x", 'data:image/jpeg;base64,AA"><script>'), /<img/);
+  assert.doesNotMatch(avatarHtml("x", "https://evil.example/a.png"), /<img/);
+  assert.equal(memberSince("2026-10-05T10:00:00Z"), "Dabei seit Oktober 2026");
+  assert.equal(memberSince(undefined), "");
 });

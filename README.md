@@ -39,6 +39,17 @@ Beim Öffnen erscheint ein Startmenü mit **Anmelden** und **Registrieren** (E-M
 - **Freunde**: Spieler über den Namen suchen, Anfragen senden/annehmen/ablehnen, Freunde ansehen und entfernen.
 - Die Trophäen rechnet der **Server** aus (Supabase-Funktionen in `supabase/trophies.sql`), nicht das Handy.
 - Jede Aufgabe hat eine kurze **Orientierungsphase** (0,9–1,8 s), in der die Zeit noch nicht läuft.
+- Beim **ersten Mal** wird jedes Minispiel mindestens **10 Sekunden** erklärt (mit Countdown, nicht wegtippbar). Unter ⚙️ → **Minispiel-Erklärungen wieder zeigen** kommen alle Erklärungen nochmal.
+
+### Profil
+
+Oben rechts im Hauptmenü sitzt das eigene Profilbild. Ein Tipp darauf öffnet das Profil:
+
+- **Profilbild** aus der eigenen Foto-Mediathek (oder Kamera). Die App schneidet es quadratisch zu und verkleinert es auf ein kleines JPEG (meist unter 30 KB).
+- **Statistiken**: Trophäen, Weltrang, Höchststand, beste Serie, „Dabei seit“.
+- **Profil-Link** (z. B. `https://zwip.app/?p=Lena`) zum Senden über WhatsApp & Co. oder zum Kopieren. Wer den Link öffnet, sieht nach der Anmeldung das Profil und kann direkt eine Freundschaftsanfrage schicken.
+- **Konto**: Spielername ändern, **Passwort ändern** (mit Abfrage des aktuellen Passworts), Abmelden.
+- Profile anderer Spieler (aus Rangliste und Freundesliste) zeigen ebenfalls Profilbild und einen Teilen-Knopf. Die E-Mail-Adresse ist nie öffentlich.
 
 ### Spielmodi
 

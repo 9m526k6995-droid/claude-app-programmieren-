@@ -12,7 +12,7 @@ import {
   type DayResult,
 } from "./state";
 import { createSfx } from "./sound";
-import { GAME_BY_ID, type Outcome } from "./games";
+import { GAME_BY_ID, EXPLAIN_MS, type Outcome, type MicroGame } from "./games";
 import { buildRounds, endlessRound, roundPoints, tileOf, verdict, ROUNDS, idsForDay, GAME_IDS, type Mode, type RoundSpec } from "./run";
 import {
   encodeChallenge,
@@ -37,12 +37,18 @@ import {
   setCachedProfile,
   onProfileChange,
   SocialError,
+  getMyProfileCard,
+  cachedAvatar,
+  setCachedAvatar,
+  onAvatarChange,
   type MyProfile,
   type RoundStart,
 } from "./social";
 import { renderPath, renderTrophyResult, renderWorldBoard, askUsername, suggestUsername, leagueUp } from "./trophyUi";
 import { renderFriends } from "./friendsUi";
 import { renderStart } from "./startmenu";
+import { openMyProfile, openPlayerProfile } from "./profileUi";
+import { avatarHtml } from "./profileKit";
 import { esc, sleep, toast, modal } from "./ui";
 
 declare const __ZWIP_SINGLE__: boolean;
@@ -129,6 +135,37 @@ let pending: ChallengePayload | null = null;
       /* in Sandbox egal */
     }
   }
+}
+
+// ---------- Profil-Direktlinks (?p=Spielername) ----------
+
+let pendingProfile: string | null = null;
+{
+  const name = params.get("p")?.trim();
+  if (name) {
+    if (/^[A-Za-z0-9_]{3,16}$/.test(name)) pendingProfile = name;
+    else toast("Dieser Profil-Link ist kaputt 🤔");
+    try {
+      history.replaceState(null, "", location.pathname);
+    } catch {
+      /* in Sandbox egal */
+    }
+  }
+}
+
+/** Nach der Anmeldung: Profil aus einem geöffneten Direktlink zeigen. */
+function openPendingProfile() {
+  if (!pendingProfile) return;
+  const name = pendingProfile;
+  pendingProfile = null;
+  openPlayerProfile(name, {
+    hasName: () => Boolean(myProfile?.username),
+    askName: (then) => {
+      if (myProfile) askName(then);
+      else void loadProfile().then(() => (myProfile?.username ? then() : askName(then)));
+    },
+    openSelf: () => openProfile(),
+  });
 }
 
 function challengeSeed(p: ChallengePayload): number {
@@ -218,6 +255,7 @@ function home() {
         <span class="flame" aria-hidden="true">🔥</span><b id="trophy-count">${myTrophyLabel()}</b>
       </button>
       <div class="top-actions">
+        <button class="icon-btn avatar-btn" data-act="profile" aria-label="Mein Profil">${avatarHtml(myProfile?.username || S.name, cachedAvatar(currentUser()?.id), "top-avatar")}</button>
         <button class="icon-btn" data-act="sound" aria-label="Ton an/aus">${S.muted ? "🔇" : "🔊"}</button>
         <button class="icon-btn" data-act="settings" aria-label="Einstellungen">⚙️</button>
       </div>
@@ -280,28 +318,73 @@ function playScreen(mode: Mode, total: number) {
   </div>`;
 }
 
+/** Erklärzeit beim ersten Mal. In automatischen Tests kürzer (per ?explain=ms einstellbar). */
+const EXPLAIN = E2E ? Number(params.get("explain") ?? 400) : EXPLAIN_MS;
+
 async function showIntro(holder: HTMLElement, spec: RoundSpec, label: string) {
   const g = GAME_BY_ID[spec.gameId];
   const first = !S.seen.includes(g.id);
   if (first) {
     S.seen.push(g.id);
     save();
+    return explainGame(holder, g, label);
   }
   const intro = document.createElement("div");
   intro.className = "intro";
   intro.style.background = g.bg;
-  intro.innerHTML = `<div class="intro-round">${label}</div><div class="intro-emoji">${g.emoji}</div><div class="intro-title">${g.title}</div>${
-    first ? `<div class="intro-hint">${g.hint}</div>` : ""
-  }`;
+  intro.innerHTML = `<div class="intro-round">${label}</div><div class="intro-emoji">${g.emoji}</div><div class="intro-title">${g.title}</div>`;
   holder.replaceChildren(intro);
   sfx.tick();
   await new Promise<void>((res) => {
-    const t = setTimeout(res, first ? 1150 : 680);
+    const t = setTimeout(res, 680);
     intro.addEventListener("pointerdown", () => {
       clearTimeout(t);
       res();
     });
   });
+}
+
+/**
+ * Erklärung beim ersten Mal: mindestens EXPLAIN Millisekunden (10 s), mit Countdown.
+ * Lässt sich bewusst nicht wegtippen, damit wirklich jede/r weiß, was zu tun ist.
+ */
+async function explainGame(holder: HTMLElement, g: MicroGame, label: string) {
+  const secs = Math.ceil(EXPLAIN / 1000);
+  const intro = document.createElement("div");
+  intro.className = "intro explain";
+  intro.style.background = g.bg;
+  intro.setAttribute("role", "dialog");
+  intro.setAttribute("aria-label", `So geht ${g.title}`);
+  intro.innerHTML = `
+    <div class="intro-round">${label} · <span class="explain-new">NEU</span></div>
+    <div class="intro-emoji">${g.emoji}</div>
+    <div class="intro-title">${g.title}</div>
+    <p class="explain-text">${g.howto}</p>
+    <div class="intro-hint">💡 ${g.hint}</div>
+    <div class="explain-count" aria-live="polite">
+      <span class="explain-bar"><i style="animation-duration:${EXPLAIN}ms"></i></span>
+      <b>Los geht's in <span class="explain-n">${secs}</span> s</b>
+    </div>`;
+  holder.replaceChildren(intro);
+  sfx.tick();
+  const n = intro.querySelector<HTMLElement>(".explain-n")!;
+  const t0 = performance.now();
+  await new Promise<void>((res) => {
+    const iv = window.setInterval(() => {
+      const left = EXPLAIN - (performance.now() - t0);
+      if (aborted || left <= 0) {
+        clearInterval(iv);
+        res();
+        return;
+      }
+      const s = String(Math.ceil(left / 1000));
+      if (n.textContent !== s) n.textContent = s;
+    }, 100);
+  });
+  if (aborted) return;
+  intro.querySelector(".explain-count b")!.textContent = "Los! ⚡";
+  sfx.tick();
+  await sleep(350);
 }
 
 interface RoundResult extends Outcome {
@@ -726,6 +809,7 @@ function settings() {
        <div><span class="lbl">Angemeldet als</span><b class="account-mail">${esc(currentUser()?.email ?? "")}</b></div>
        <button class="btn ghost sm" id="set-logout" type="button">Abmelden</button>
      </div>
+     <button class="btn ghost sm" id="set-explain" type="button">Minispiel-Erklärungen wieder zeigen</button>
      <div class="how">
        <b>So geht ZWIP</b>
        <p>Jeden Tag gibt es eine Daily mit 10 Blitz-Challenges – für alle gleich. Schnell + richtig = mehr Punkte (max. 1000). Teile dein Ergebnis oder schick einen Duell-Link: Deine Freunde spielen exakt dieselbe Runde.</p>
@@ -733,6 +817,13 @@ function settings() {
      </div>
      <button class="btn primary" id="set-save">Speichern</button>`,
     (el, close) => {
+      el.querySelector("#set-explain")!.addEventListener("click", (e) => {
+        S.seen = [];
+        save();
+        const b = e.currentTarget as HTMLButtonElement;
+        b.disabled = true;
+        b.textContent = "Erklärungen kommen wieder ✓";
+      });
       el.querySelector("#set-logout")!.addEventListener("click", async () => {
         close();
         await signOut();
@@ -794,6 +885,8 @@ app.addEventListener("click", async (e) => {
       return;
     case "settings":
       return settings();
+    case "profile":
+      return openProfile();
     case "sound":
       S.muted = !S.muted;
       sfx.setMuted(S.muted);
@@ -887,9 +980,35 @@ onProfileChange((p) => {
   if (el) el.textContent = p ? formatTrophies(p.trophies) : "–";
 });
 
+// Profilbild oben im Hauptmenü aktuell halten
+onAvatarChange((a) => {
+  const btn = document.querySelector<HTMLElement>('[data-act="profile"]');
+  if (btn) btn.innerHTML = avatarHtml(myProfile?.username || S.name, a, "top-avatar");
+});
+
+function openProfile() {
+  const uid = currentUser()?.id;
+  const p = myProfile ?? cachedProfile(uid);
+  openMyProfile({
+    email: currentUser()?.email ?? "",
+    initial: p ? { ...p, avatar: cachedAvatar(uid) } : null,
+    onAvatar: (a) => setCachedAvatar(currentUser()?.id, a),
+    onRename: (then) => askName(then),
+    onSignOut: async () => {
+      await signOut();
+      toast("Du bist abgemeldet 👋");
+    },
+  });
+}
+
 async function loadProfile(): Promise<MyProfile | null> {
   try {
-    const p = await refreshProfile(currentUser()?.id);
+    const uid = currentUser()?.id;
+    const p = await refreshProfile(uid);
+    // Profilbild im Hintergrund holen (z. B. auf einem neuen Handy)
+    void getMyProfileCard()
+      .then((c) => uid === currentUser()?.id && setCachedAvatar(uid, c.avatar))
+      .catch(() => {});
     if (p?.username && !S.nameSet) {
       S.name = p.username;
       S.nameSet = true;
@@ -1116,10 +1235,17 @@ function showStart() {
   clearTimers();
   document.querySelector(".modal-bg")?.remove();
   renderStart(app, {
-    banner: pending ? `<b>${esc(pending.n)}</b> fordert dich heraus (${sumPoints(pending.r)} Punkte)` : undefined,
+    banner: pending
+      ? `<b>${esc(pending.n)}</b> fordert dich heraus (${sumPoints(pending.r)} Punkte)`
+      : pendingProfile
+        ? `Du wurdest zum Profil von <b>${esc(pendingProfile)}</b> eingeladen`
+        : undefined,
+    bannerIcon: pending ? undefined : "👤",
+    bannerSub: pending ? undefined : "Melde dich an, um das Profil zu sehen.",
     onSignedIn: (fresh) => {
       home();
       void loadProfile();
+      openPendingProfile();
       toast(fresh ? "Account erstellt – viel Spaß! 🎉" : "Angemeldet ✌️");
     },
   });
@@ -1129,6 +1255,7 @@ function showStart() {
 onAuthChange((s) => {
   if (!s) {
     setCachedProfile(undefined, null);
+    setCachedAvatar(undefined, null);
     showStart();
   }
 });
@@ -1139,6 +1266,7 @@ async function boot() {
   if (s) {
     home();
     void loadProfile();
+    openPendingProfile();
   } else showStart();
 }
 
