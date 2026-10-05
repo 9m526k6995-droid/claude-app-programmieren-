@@ -65,6 +65,9 @@ select t_login(:MIA);
 select t_assert(t_error_of($$select start_minigame_run('gibtsnicht')$$) = 'unknown_game', 'Unbekanntes Minigame wird abgelehnt');
 select t_assert((start_minigame_run('memory') ->> 'seed')::int > 0, 'Lauf starten liefert einen Seed vom Server');
 select t_assert(get_my_minigame_bests() = '[]'::jsonb, 'Noch keine Bestwerte');
+select t_assert((select bool_and((start_minigame_run(g) ->> 'seed')::int > 0) from unnest(array['count','mole','spell','clock','big','shape','order','newone','cups','pair']) g),
+  'Alle 10 neuen Minigames haben einen Lauf und eine Rangliste');
+select start_minigame_run('memory');
 
 -- Direkt beenden geht nicht (zu schnell für 5 Memory-Stufen)
 select t_assert(

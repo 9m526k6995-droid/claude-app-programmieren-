@@ -7,13 +7,17 @@ export type Mode = "daily" | "free" | "endless" | "challenge";
 export const ROUNDS = 10;
 /** Die ursprünglichen 8 Challenges (Daily #1–#4). */
 export const CLASSIC_IDS = ["odd", "stop", "wait", "more", "pop", "sum", "ink", "swipe"] as const;
-/** Alle Challenges. Neue einfach hinten anhängen und NEW_GAMES_FROM_DAY anpassen. */
-export const GAME_IDS = [...CLASSIC_IDS, "find", "memory", "beat", "pattern"] as const;
-/** Ab dieser Daily sind die neuen Challenges dabei – ältere Dailies (und Duelle darauf) bleiben exakt gleich. */
+/** Die 12 Challenges der zweiten Welle (Daily #5). */
+export const WAVE2_IDS = [...CLASSIC_IDS, "find", "memory", "beat", "pattern"] as const;
+/** Alle Challenges. Neue einfach hinten anhängen und eine neue Welle mit Start-Daily festlegen. */
+export const GAME_IDS = [...WAVE2_IDS, "count", "mole", "spell", "clock", "big", "shape", "order", "newone", "cups", "pair"] as const;
+/** Ab dieser Daily sind die Challenges der 2. Welle dabei. */
 export const NEW_GAMES_FROM_DAY = 5;
+/** Ab dieser Daily sind alle 22 Challenges dabei – ältere Dailies (und Duelle darauf) bleiben exakt gleich. */
+export const WAVE3_FROM_DAY = 6;
 
 export function idsForDay(day: number): readonly string[] {
-  return day < NEW_GAMES_FROM_DAY ? CLASSIC_IDS : GAME_IDS;
+  return day < NEW_GAMES_FROM_DAY ? CLASSIC_IDS : day < WAVE3_FROM_DAY ? WAVE2_IDS : GAME_IDS;
 }
 
 export interface RoundSpec {

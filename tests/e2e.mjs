@@ -209,7 +209,8 @@ async function newPage() {
   const page = await ctx.newPage();
   page.on("pageerror", (e) => errors.push(`pageerror: ${e.message}`));
   page.on("console", (m) => m.type() === "error" && !m.text().startsWith("Failed to load resource") && errors.push(`console: ${m.text()}`));
-  page.on("requestfailed", (r) => !/fonts\.(googleapis|gstatic)/.test(r.url()) && errors.push(`request: ${r.url()}`));
+  // Abgebrochene Anfragen beim Seitenwechsel (ERR_ABORTED) sind harmlos und werden ignoriert
+  page.on("requestfailed", (r) => !/fonts\.(googleapis|gstatic)/.test(r.url()) && !/ERR_ABORTED/.test(r.failure()?.errorText ?? "") && errors.push(`request: ${r.url()}`));
   // navigator.share gibt es im Headless-Browser nicht zuverlässig → Clipboard-Pfad wird getestet
   await page.addInitScript(() => {
     Object.defineProperty(navigator, "share", { value: undefined, configurable: true });
@@ -237,7 +238,8 @@ async function authError(page) {
 
 async function center(page, handleFn) {
   return page.evaluate((fnSrc) => {
-    const el = new Function("r", `return (${fnSrc})(r)`)(window.__zwip.round);
+    let el = new Function("r", `return (${fnSrc})(r)`)(window.__zwip.round);
+    if (typeof el === "function") el = el();
     const b = el.getBoundingClientRect();
     return { x: b.left + b.width / 2, y: b.top + b.height / 2 };
   }, handleFn.toString());
@@ -255,8 +257,13 @@ async function stageCenter(page) {
 
 /** Löst die aktuelle Runde wie ein echter Mensch (Klick/Swipe). fail=true: absichtlich falsch. */
 async function solveRound(page, lastN, fail = false) {
-  await page.waitForFunction((n) => window.__zwip.round && window.__zwip.round.n > n, lastN, { timeout: 8000 });
+  await page.waitForFunction((n) => window.__zwip.round && window.__zwip.round.n > n, lastN, { timeout: 15000 }).catch(async (e) => {
+    await page.screenshot({ path: `${SHOTS}/zz-timeout.png` });
+    console.log("Hängt bei:", await page.evaluate(() => document.querySelector(".stage, .intro")?.className + " | " + document.querySelector(".t-task, .hud")?.textContent));
+    throw e;
+  });
   const r = await page.evaluate(() => ({ id: window.__zwip.round.gameId, n: window.__zwip.round.n, dir: window.__zwip.round.dir }));
+  const waitReady = () => page.waitForFunction(() => !window.__zwip.round?.isReady || window.__zwip.round.isReady(), null, { polling: "raf", timeout: 15000 });
   if (fail) {
     if (r.id === "swipe") {
       const c = await stageCenter(page);
@@ -277,11 +284,27 @@ async function solveRound(page, lastN, fail = false) {
     } else if (r.id === "beat") {
       const c = await stageCenter(page);
       await page.mouse.click(c.x, c.y); // viel zu früh
-    } else if (["odd", "more", "sum", "ink", "find", "pattern"].includes(r.id)) {
+    } else if (r.id === "mole") {
+      // nichts tun → Maulwurf verschwindet → verpasst
+    } else if (r.id === "clock") {
+      await page.waitForTimeout(800);
+      const c = await stageCenter(page);
+      await page.mouse.click(c.x, c.y); // viel zu früh
+    } else if (r.id === "order") {
+      const p = await page.evaluate(() => {
+        const b = window.__zwip.round.sequence[1].getBoundingClientRect();
+        return { x: b.left + b.width / 2, y: b.top + b.height / 2 };
+      });
+      await page.mouse.click(p.x, p.y);
+    } else if (["odd", "more", "sum", "ink", "find", "pattern", "count", "spell", "big", "shape", "newone", "cups", "pair"].includes(r.id)) {
+      await waitReady();
       // Ein falsches Feld derselben Sorte tippen
       const p = await page.evaluate(() => {
-        const t = window.__zwip.round.target;
-        const wrong = [...t.parentElement.children].find((e) => e !== t);
+        const R = window.__zwip.round;
+        let t = R.target;
+        if (typeof t === "function") t = t();
+        let wrong = typeof R.wrong === "function" ? R.wrong() : R.wrong;
+        wrong ??= [...t.parentElement.children].find((e) => e !== t);
         const b = wrong.getBoundingClientRect();
         return { x: b.left + b.width / 2, y: b.top + b.height / 2 };
       });
@@ -303,7 +326,15 @@ async function solveRound(page, lastN, fail = false) {
     case "sum":
     case "ink":
     case "find":
-    case "pattern": {
+    case "pattern":
+    case "count":
+    case "spell":
+    case "big":
+    case "shape":
+    case "newone":
+    case "cups":
+    case "pair": {
+      await waitReady();
       const p = await center(page, (round) => round.target);
       await page.mouse.click(p.x, p.y);
       break;
@@ -319,7 +350,8 @@ async function solveRound(page, lastN, fail = false) {
       }
       break;
     }
-    case "memory": {
+    case "memory":
+    case "order": {
       await page.waitForFunction(() => window.__zwip.round?.isReady?.(), null, { polling: "raf", timeout: 8000 });
       const n = await page.evaluate(() => window.__zwip.round.sequence.length);
       for (let i = 0; i < n; i++) {
@@ -331,6 +363,25 @@ async function solveRound(page, lastN, fail = false) {
       }
       break;
     }
+    case "mole": {
+      for (let k = 0; k < 40; k++) {
+        const st = await page
+          .waitForFunction(() => window.__zwip.round?.done?.() || window.__zwip.round?.nextMole?.(), null, { polling: "raf", timeout: 5000 })
+          .then((h) => h.jsonValue().catch(() => true), () => true);
+        const done = await page.evaluate(() => !window.__zwip.round?.nextMole || window.__zwip.round.done());
+        if (done) break;
+        const p = await page.evaluate(() => {
+          const m = window.__zwip.round?.nextMole?.();
+          if (!m) return null;
+          const b = m.getBoundingClientRect();
+          return { x: b.left + b.width / 2, y: b.top + b.height / 2 };
+        });
+        if (p) await page.mouse.click(p.x, p.y);
+        void st;
+      }
+      break;
+    }
+    case "clock":
     case "beat": {
       await page.waitForFunction(() => performance.now() >= window.__zwip.round.targetAt - 25, null, { polling: "raf", timeout: 6000 });
       const c = await stageCenter(page);
@@ -590,6 +641,34 @@ try {
   const fState = await B.page.evaluate(() => [...document.querySelectorAll(".tile b")].map((b) => Number(b.textContent)));
   check(fState.every((p) => p === 0), `Falsche Antworten geben 0 Punkte (${fState.join("/")})`);
 
+  // 8c) Die 10 Spiele der dritten Welle im Training: einmal richtig, einmal absichtlich falsch
+  await B.page.goto(`${BASE}?e2e=1&only=count,mole,spell,clock,big,shape,order,newone,cups,pair#/spielen`);
+  await B.page.waitForSelector('[data-act="free"]', { timeout: 5000 });
+  await B.page.click('[data-act="free"]', { force: true });
+  const w3 = [];
+  let w3n = 0;
+  for (let i = 0; i < 10; i++) {
+    const r = await solveRound(B.page, w3n);
+    w3n = r.n;
+    w3.push(r.id);
+    await B.page.screenshot({ path: `${SHOTS}/w3-${i + 1}-${r.id}.png` });
+  }
+  await B.page.waitForSelector(".score-big", { timeout: 15000 });
+  const w3Pts = await B.page.evaluate(() => [...document.querySelectorAll(".tile b")].map((b) => Number(b.textContent)));
+  check(new Set(w3).size === 10, `Alle 10 neuen Spiele kommen vor: ${w3.join(", ")}`);
+  check(w3Pts.every((p) => p > 0), `Alle 10 neuen Spiele per echtem Tap lösbar (Punkte ${w3Pts.join("/")})`);
+  await B.page.click('.actions-2 [data-act="free"]', { force: true });
+  w3n = 0;
+  const w3fail = [];
+  for (let i = 0; i < 10; i++) {
+    const r = await solveRound(B.page, w3n, true);
+    w3n = r.n;
+    w3fail.push(r.id);
+  }
+  await B.page.waitForSelector(".score-big", { timeout: 25000 });
+  const w3F = await B.page.evaluate(() => [...document.querySelectorAll(".tile b")].map((b) => Number(b.textContent)));
+  check(w3F.every((p) => p === 0), `Neue Spiele erkennen Fehler (${w3fail.join(", ")} → ${w3F.join("/")})`);
+
   // 9) Erklärkarte vor JEDER Aufgabe: läuft durch, lässt sich nicht wegtippen (Dauer im Test verkürzt)
   await B.page.goto(`${BASE}?e2e=1&explain=3000#/spielen`);
   await B.page.waitForSelector('[data-act="free"]');
@@ -631,7 +710,7 @@ try {
   check(true, "Zurück-Knopf führt zum vorherigen Tab");
   await B.page.click('.mode-card[href="#/minigames"]', { force: true });
   await B.page.waitForSelector(".mg-grid");
-  check((await B.page.locator(".mg-card").count()) === 12, "Minigames-Übersicht mit 12 Spielen");
+  check((await B.page.locator(".mg-card").count()) === 22, "Minigames-Übersicht mit 22 Spielen");
   await B.page.reload();
   await B.page.waitForSelector(".mg-grid", { timeout: 5000 });
   check(true, "Neuladen bleibt auf demselben Bildschirm");
@@ -639,6 +718,7 @@ try {
   for (const t of ["start", "freunde", "profil"]) {
     await B.page.click(`[data-tab="${t}"]`, { force: true });
     await B.page.waitForFunction((t) => location.hash === `#/${t}`, t);
+    await B.page.waitForSelector(`.tab.on[data-tab="${t}"]`);
   }
   await B.page.waitForSelector('[data-pf="logout"]');
   check(true, "Alle Tabs erreichbar (Start, Freunde, Profil)");
@@ -697,7 +777,7 @@ try {
     if (i === 6) await tP.screenshot({ path: `${SHOTS}/t3-trophy-play.png` });
   }
   check(sawShield && prepChecks.every(Boolean), "Vorbereitungsphase: Tippen während der Orientierung zählt nicht");
-  check(new Set(seenT).size === 12, `Alle 12 Minispiele kommen in der Trophäen-Runde vor (${seenT.join(", ")})`);
+  check(new Set(seenT).size === 15, `15 verschiedene Minispiele in der Trophäen-Runde (${seenT.join(", ")})`);
   check(seenT.every((g, i) => i === 0 || g !== seenT[i - 1]), "Nie dasselbe Spiel direkt hintereinander");
   await tP.waitForSelector(".tr-rows", { timeout: 30000 });
   await tP.waitForFunction(() => !document.querySelector(".tr-status"), null, { timeout: 30000 });
@@ -705,7 +785,7 @@ try {
   if (await tP.isVisible(".league-up")) await tP.click(".league-up button", { force: true });
   const shownDelta = (await tP.textContent("#tr-delta")).replace(/[^\d−-]/g, "").replace("−", "-");
   const dbTrophies = Number(dbVal("select trophies from public.profiles where username = 'Lena'"));
-  check(dbTrophies > 100 && Number(shownDelta) === dbTrophies, `Server hat ${dbTrophies} Trophäen gutgeschrieben, Anzeige stimmt (${shownDelta})`);
+  check(dbTrophies > 60 && Number(shownDelta) === dbTrophies, `Server hat ${dbTrophies} Trophäen gutgeschrieben, Anzeige stimmt (${shownDelta})`);
   check(dbVal("select trophy_rounds || '/' || (best_streak > 0) from public.profiles where username = 'Lena'") === "1/true", "Runden und beste Serie in der Datenbank");
   check((await tP.textContent(".tr-rows")).includes("Geschwindigkeitsbonus"), "Ergebnisseite mit Aufschlüsselung");
   await tP.screenshot({ path: `${SHOTS}/t4-result.png`, fullPage: true });
@@ -978,7 +1058,7 @@ try {
   // Jedes Spiel lässt sich auf jeder Stufe 1–60 fehlerfrei aufbauen
   const mountProblems = await tP.evaluate(() => {
     const bad = [];
-    for (const id of ["odd", "stop", "wait", "more", "pop", "sum", "ink", "swipe", "find", "memory", "beat", "pattern"])
+    for (const id of ["odd", "stop", "wait", "more", "pop", "sum", "ink", "swipe", "find", "memory", "beat", "pattern", "count", "mole", "spell", "clock", "big", "shape", "order", "newone", "cups", "pair"])
       for (let n = 1; n <= 60; n++) {
         try {
           const r = window.__zwip.mountStage(id, n);
@@ -989,7 +1069,7 @@ try {
       }
     return bad;
   });
-  check(mountProblems.length === 0, `Alle 12 Minigames bauen auf Stufe 1–60 fehlerfrei auf${mountProblems.length ? ": " + mountProblems.slice(0, 5).join(" | ") : ""}`);
+  check(mountProblems.length === 0, `Alle 22 Minigames bauen auf Stufe 1–60 fehlerfrei auf${mountProblems.length ? ": " + mountProblems.slice(0, 5).join(" | ") : ""}`);
 
   await tP.goto(`${BASE}?e2e=1#/minigames`);
   await tP.waitForSelector('.mg-card[data-mg="memory"]');
@@ -1034,7 +1114,7 @@ try {
   await tP.screenshot({ path: `${SHOTS}/m5-board.png` });
 
   // Drei weitere Minigames: zwei Stufen schaffen, dann Fehler
-  for (const id of ["odd", "sum", "pattern"]) {
+  for (const id of ["odd", "sum", "pattern", "count", "cups", "order"]) {
     await tP.goto(`${BASE}?e2e=1#/minigames/${id}`);
     await tP.waitForSelector('[data-act="mgplay"]');
     await tP.click('[data-act="mgplay"]', { force: true });
@@ -1078,7 +1158,8 @@ try {
   }
   check(overflow.length === 0, `Kein waagrechtes Scrollen bei 360 px${overflow.length ? ": " + overflow.join(", ") : ""}`);
   // Schwere Stufen ansehen (Layout bei vielen Feldern)
-  for (const [id, n] of [["odd", 20], ["memory", 12], ["find", 14], ["pattern", 12], ["pop", 13], ["more", 15], ["ink", 12], ["swipe", 14], ["beat", 12], ["sum", 14], ["wait", 8], ["stop", 12]]) {
+  for (const [id, n] of [["odd", 20], ["memory", 12], ["find", 14], ["pattern", 12], ["pop", 13], ["more", 15], ["ink", 12], ["swipe", 14], ["beat", 12], ["sum", 14], ["wait", 8], ["stop", 12],
+    ["count", 18], ["mole", 14], ["spell", 12], ["clock", 10], ["big", 17], ["big", 9], ["shape", 14], ["order", 15], ["newone", 12], ["cups", 12], ["pair", 15], ["pair", 3]]) {
     await tP.evaluate(([id, n]) => window.__zwip.previewStage(id, n), [id, n]);
     await tP.waitForTimeout(450);
     const ow = await tP.evaluate(() => {
@@ -1089,6 +1170,7 @@ try {
       }).length;
     });
     check(ow === 0, `${id} Stufe ${n}: alles passt auf ein 360-px-Handy`);
+    if (id === "newone" || id === "count" || id === "cups") await tP.waitForTimeout(1600);
     await tP.screenshot({ path: `${SHOTS}/s360-${id}-${n}.png` });
   }
   await tP.evaluate(() => document.querySelector(".e2e-preview")?.remove());

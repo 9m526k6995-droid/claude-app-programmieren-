@@ -72,41 +72,8 @@ export interface MicroGame {
   mount(ctx: Ctx): Mounted;
 }
 
-const lerp = (a: number, b: number, t: number) => a + (b - a) * Math.max(0, Math.min(1, t));
-/** Stufe sicher als ganze Zahl ≥ 1 */
-const st = (n: number) => Math.max(1, Math.floor(n) || 1);
-
-function h<K extends keyof HTMLElementTagNameMap>(tag: K, cls = "", text = ""): HTMLElementTagNameMap[K] {
-  const e = document.createElement(tag);
-  if (cls) e.className = cls;
-  if (text) e.textContent = text;
-  return e;
-}
-
-function onPress(el: HTMLElement, fn: (e: PointerEvent) => void) {
-  el.addEventListener("pointerdown", (e) => {
-    e.preventDefault();
-    e.stopPropagation();
-    fn(e);
-  });
-}
-
-/** Zufällige, sich kaum überlappende Positionen in einem Raster (in %). */
-function scatter(rng: Rng, count: number, cols: number, rows: number, pad = 8) {
-  const cells: [number, number][] = [];
-  for (let c = 0; c < cols; c++) for (let r = 0; r < rows; r++) cells.push([c, r]);
-  return rng
-    .shuffle(cells)
-    .slice(0, count)
-    .map(([c, r]) => {
-      const w = (100 - pad * 2) / cols;
-      const hh = (100 - pad * 2) / rows;
-      return {
-        x: pad + c * w + w * (0.25 + rng.next() * 0.5),
-        y: pad + r * hh + hh * (0.25 + rng.next() * 0.5),
-      };
-    });
-}
+import { lerp, st, h, onPress, scatter } from "./gameKit";
+import { GAMES_WAVE3 } from "./games2";
 
 export const PALETTE = ["#ff3d8b", "#3d7bff", "#2fd17a", "#ffd23d", "#ff8a3d", "#a45cff", "#25d9e8"];
 
@@ -1311,5 +1278,5 @@ const pattern: MicroGame = {
   },
 };
 
-export const GAMES: MicroGame[] = [odd, stop, wait, more, pop, sum, ink, swipe, find, memory, beat, pattern];
+export const GAMES: MicroGame[] = [odd, stop, wait, more, pop, sum, ink, swipe, find, memory, beat, pattern, ...GAMES_WAVE3];
 export const GAME_BY_ID: Record<string, MicroGame> = Object.fromEntries(GAMES.map((g) => [g.id, g]));

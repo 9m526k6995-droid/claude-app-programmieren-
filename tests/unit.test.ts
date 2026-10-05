@@ -1,7 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { makeRng, dayIndex, daySeed, dateOfDay } from "../src/rng";
-import { buildRounds, endlessRound, roundPoints, tileOf, GAME_IDS, CLASSIC_IDS, ROUNDS, idsForDay, NEW_GAMES_FROM_DAY } from "../src/run";
+import { buildRounds, endlessRound, roundPoints, tileOf, GAME_IDS, CLASSIC_IDS, WAVE2_IDS, ROUNDS, idsForDay, NEW_GAMES_FROM_DAY, WAVE3_FROM_DAY } from "../src/run";
 import { freshState, recordDaily, currentStreak, addCrewResult } from "../src/state";
 import { profileLink, avatarHtml, memberSince } from "../src/profileKit";
 import { routeParts, tabFor } from "../src/nav";
@@ -116,7 +116,10 @@ test("Crew: Ergebnisse von Freunden werden pro Tag gespeichert", () => {
   assert.equal(s.crew.f1.days[4].score, 700);
 });
 
-test("Mit allen 12 Challenges: 10 verschiedene pro Runde, neue kommen vor", () => {
+test("Mit allen 22 Challenges: 10 verschiedene pro Runde, alle kommen vor", () => {
+  assert.equal(GAME_IDS.length, 22);
+  assert.equal(GAMES.length, 22);
+  assert.deepEqual(GAMES.map((g) => g.id).sort(), [...GAME_IDS].sort(), "Registry und Spiel-IDs passen zusammen");
   const seen = new Set<string>();
   for (let s = 0; s < 300; s++) {
     const r = buildRounds(s * 104729, ROUNDS, GAME_IDS);
@@ -124,19 +127,33 @@ test("Mit allen 12 Challenges: 10 verschiedene pro Runde, neue kommen vor", () =
     r.forEach((x) => seen.add(x.gameId));
   }
   assert.equal(seen.size, GAME_IDS.length);
+  // Trophäen-Modus: 15 Aufgaben aus 22 → kein Spiel doppelt
+  for (let s = 0; s < 200; s++) {
+    const r = buildRounds(s * 7919 + 1, 15, GAME_IDS);
+    assert.equal(new Set(r.map((x) => x.gameId)).size, 15);
+  }
 });
 
-test("Neue Challenges erst ab Daily #5 – alte Dailies und Duelle bleiben identisch", () => {
+test("Neue Challenges erst ab ihrer Daily – alte Dailies und Duelle bleiben identisch", () => {
   assert.deepEqual(idsForDay(4), CLASSIC_IDS);
-  assert.deepEqual(idsForDay(NEW_GAMES_FROM_DAY), GAME_IDS);
+  assert.deepEqual(idsForDay(NEW_GAMES_FROM_DAY), WAVE2_IDS);
+  assert.deepEqual(idsForDay(WAVE3_FROM_DAY), GAME_IDS);
   // Daily #4 muss exakt so aussehen wie vor dem Update (damals Standard = 8 Klassiker)
-  const before = buildRounds(daySeed(4), ROUNDS, ["odd", "stop", "wait", "more", "pop", "sum", "ink", "swipe"]);
-  assert.deepEqual(buildRounds(daySeed(4), ROUNDS, idsForDay(4)), before);
+  const before4 = buildRounds(daySeed(4), ROUNDS, ["odd", "stop", "wait", "more", "pop", "sum", "ink", "swipe"]);
+  assert.deepEqual(buildRounds(daySeed(4), ROUNDS, idsForDay(4)), before4);
+  // Daily #5 (heute beim Update) bleibt bei den 12 Spielen von gestern
+  const before5 = buildRounds(daySeed(5), ROUNDS, ["odd", "stop", "wait", "more", "pop", "sum", "ink", "swipe", "find", "memory", "beat", "pattern"]);
+  assert.deepEqual(buildRounds(daySeed(5), ROUNDS, idsForDay(5)), before5);
   assert.ok(buildRounds(daySeed(5), ROUNDS, idsForDay(5)).some((r) => !(CLASSIC_IDS as readonly string[]).includes(r.gameId)));
+  // Ab Daily #6 sind die 10 neuen dabei
+  const wave3 = ["count", "mole", "spell", "clock", "big", "shape", "order", "newone", "cups", "pair"];
+  let seenNew = 0;
+  for (let d = WAVE3_FROM_DAY; d < WAVE3_FROM_DAY + 30; d++) seenNew += buildRounds(daySeed(d), ROUNDS, idsForDay(d)).filter((r) => wave3.includes(r.gameId)).length;
+  assert.ok(seenNew > 60, `neue Spiele kommen in den Dailies vor (${seenNew})`);
 });
 
 // ---------- Trophäen ----------
-import { scoreRound, leagueFor, milestoneProgress, MILESTONES, clampTrophies, difficultyRange, levelFor, tierFor, formatTrophies, LEAGUES } from "../src/trophies";
+import { scoreRound, leagueFee, leagueFor, milestoneProgress, MILESTONES, clampTrophies, difficultyRange, levelFor, tierFor, formatTrophies, LEAGUES } from "../src/trophies";
 import { GAMES, EXPLAIN_MS } from "../src/games";
 
 const tasks = (ok: number, tier: 0 | 1 | 2, wrong: number) => [
@@ -145,21 +162,45 @@ const tasks = (ok: number, tier: 0 | 1 | 2, wrong: number) => [
 ];
 
 test("Trophäen-Berechnung identisch zum Server", () => {
-  assert.equal(scoreRound(tasks(15, 2, 0)).raw, 225); // 150 + 45 + 5 + 10 + 15
-  assert.equal(scoreRound(tasks(12, 1, 3)).raw, 135); // 120 + 24 + 5 + 10 − 24
-  assert.equal(scoreRound(tasks(4, 0, 11)).raw, -48);
+  assert.equal(scoreRound(tasks(15, 2, 0)).raw, 150); // 90 + 30 + 5 + 10 + 15
+  assert.equal(scoreRound(tasks(12, 1, 3)).raw, 69); // 72 + 12 + 5 + 10 − 30
+  assert.equal(scoreRound(tasks(4, 0, 11)).raw, -86);
   const r = scoreRound(tasks(15, 0, 0));
-  assert.deepEqual([r.base, r.speed, r.streakBonus, r.penalty, r.bestStreak], [150, 0, 30, 0, 15]);
-  assert.equal(r.steps[4].delta, 15, "5. richtige Antwort: +10 und +5 Serienbonus");
+  assert.deepEqual([r.base, r.speed, r.streakBonus, r.penalty, r.fee, r.bestStreak], [90, 0, 30, 0, 0, 15]);
+  assert.equal(r.steps[4].delta, 11, "5. richtige Antwort: +6 und +5 Serienbonus");
 });
 
-test("Serie reißt bei Fehler, Zeit abgelaufen kostet −8", () => {
+test("Serie reißt bei Fehler, Zeit abgelaufen kostet −10", () => {
   const t = [...tasks(4, 0, 0), { game: "x", ok: false, timeout: true, tier: 0 as const, ms: 0 }, ...tasks(5, 0, 0)];
   const r = scoreRound(t);
   assert.equal(r.bestStreak, 5);
-  assert.equal(r.steps[4].delta, -8);
+  assert.equal(r.steps[4].delta, -10);
   assert.equal(r.steps[4].label, "ZEIT UM");
   assert.equal(r.streakBonus, 5);
+});
+
+test("Liga-Einsatz: je höher, desto härter – oben nur mit (fast) perfekten Runden", () => {
+  assert.deepEqual(
+    [0, 1000, 2500, 5000, 8000, 12000, 16000, 20000].map(leagueFee),
+    [0, 10, 20, 30, 45, 60, 90, 115],
+  );
+  // wie in supabase/tests: Gold 9/15 → Minus
+  assert.equal(scoreRound(tasks(9, 0, 6), 6000).raw, -31);
+  assert.equal(scoreRound(tasks(15, 2, 0), 6000).raw, 120);
+  // Unten bringen auch mittelmäßige Runden noch kein großes Minus
+  assert.ok(scoreRound(tasks(9, 1, 6), 0).raw >= 0);
+  assert.ok(scoreRound(tasks(9, 1, 6), 3000).raw >= -15);
+  // Mitte: ab etwa 11–12/15 kein Minus mehr
+  assert.ok(scoreRound(tasks(12, 1, 3), 9000).raw > 0);
+  assert.ok(scoreRound(tasks(10, 1, 5), 9000).raw < 0);
+  // Meister: nur 14/15 oder besser bringt Plus
+  assert.equal(scoreRound(tasks(14, 1, 1), 17000).raw, 13);
+  assert.equal(scoreRound(tasks(13, 1, 2), 17000).raw, -4);
+  // Legende: nur (fast) perfekt und schnell
+  assert.ok(scoreRound(tasks(15, 2, 0), 20000).raw > 0);
+  assert.ok(scoreRound(tasks(15, 0, 0), 20000).raw > 0);
+  assert.ok(scoreRound(tasks(14, 1, 1), 20000).raw < 0);
+  assert.ok(scoreRound(tasks(14, 2, 1), 20000).raw > 0, "14/15 sehr schnell reicht knapp");
 });
 
 test("Ligen an den richtigen Grenzen", () => {
@@ -180,7 +221,7 @@ test("Meilensteine 0–5.000 alle 500, dann bis 20.000", () => {
 
 test("Schwierigkeit steigt mit Trophäen", () => {
   assert.deepEqual(difficultyRange(0), [0, 0.35]);
-  assert.deepEqual(difficultyRange(17000), [0.65, 1]);
+  assert.deepEqual(difficultyRange(17000), [0.8, 1]);
   assert.ok(levelFor(0, 14) <= levelFor(9000, 14));
   assert.ok(levelFor(9000, 0) < levelFor(9000, 14));
 });

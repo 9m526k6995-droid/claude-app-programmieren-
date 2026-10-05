@@ -7,11 +7,11 @@ export const MAX_TROPHIES = 20000;
 export const TROPHY_TASKS = 15;
 
 export const POINTS = {
-  correct: 10,
-  veryFast: 3,
-  fast: 2,
-  wrong: -8,
-  timeout: -8,
+  correct: 6,
+  veryFast: 2,
+  fast: 1,
+  wrong: -10,
+  timeout: -10,
   /** Serienbonus bei genau 5, 10 und 15 richtigen Antworten am Stück */
   streak: { 5: 5, 10: 10, 15: 15 } as Record<number, number>,
 };
@@ -35,6 +35,25 @@ export const LEAGUES: League[] = [
   { id: "meister", name: "Meister", min: 16000, emoji: "👑", color: "#c79bff" },
   { id: "legende", name: "Legende", min: 20000, emoji: "🏆", color: "#ff7ab6" },
 ];
+
+/**
+ * Liga-Einsatz: wird am Ende jeder Runde abgezogen. Maßgeblich ist der Stand bei Rundenbeginn.
+ * Muss exakt zu public.zwip_league_fee in supabase/trophies.sql passen.
+ */
+export const LEAGUE_FEE: Record<string, number> = {
+  anfaenger: 0,
+  bronze: 10,
+  silber: 20,
+  gold: 30,
+  platin: 45,
+  diamant: 60,
+  meister: 90,
+  legende: 115,
+};
+
+export function leagueFee(trophies: number): number {
+  return LEAGUE_FEE[leagueFor(trophies).id] ?? 0;
+}
 
 export function clampTrophies(t: number): number {
   return Math.max(0, Math.min(MAX_TROPHIES, Math.round(t)));
@@ -101,6 +120,8 @@ export interface RoundScore {
   speed: number;
   streakBonus: number;
   penalty: number;
+  /** Liga-Einsatz (positiv, wird abgezogen) */
+  fee: number;
   raw: number;
   correct: number;
   wrong: number;
@@ -108,8 +129,8 @@ export interface RoundScore {
   steps: TaskScore[];
 }
 
-export function scoreRound(tasks: TaskResult[]): RoundScore {
-  const r: RoundScore = { base: 0, speed: 0, streakBonus: 0, penalty: 0, raw: 0, correct: 0, wrong: 0, bestStreak: 0, steps: [] };
+export function scoreRound(tasks: TaskResult[], startTrophies = 0): RoundScore {
+  const r: RoundScore = { base: 0, speed: 0, streakBonus: 0, penalty: 0, fee: leagueFee(startTrophies), raw: 0, correct: 0, wrong: 0, bestStreak: 0, steps: [] };
   let streak = 0;
   for (const t of tasks) {
     if (t.ok && !t.timeout) {
@@ -135,7 +156,7 @@ export function scoreRound(tasks: TaskResult[]): RoundScore {
       r.steps.push({ delta: POINTS.wrong, streak: 0, streakBonus: 0, speedBonus: 0, label: t.timeout ? "ZEIT UM" : "" });
     }
   }
-  r.raw = r.base + r.speed + r.streakBonus - r.penalty;
+  r.raw = r.base + r.speed + r.streakBonus - r.penalty - r.fee;
   return r;
 }
 
@@ -155,7 +176,7 @@ export function difficultyRange(trophies: number): [number, number] {
   if (t < 8000) return [0.15, 0.55]; // leicht bis mittel
   if (t < 12000) return [0.35, 0.7]; // mittel
   if (t < 16000) return [0.5, 0.85]; // mittel bis schwer
-  return [0.65, 1]; // schwer
+  return [0.8, 1]; // sehr schwer (Meister, Legende)
 }
 
 export function difficultyLabel(trophies: number): string {
@@ -164,7 +185,7 @@ export function difficultyLabel(trophies: number): string {
   if (t < 8000) return "leicht bis mittel";
   if (t < 12000) return "mittel";
   if (t < 16000) return "mittel bis schwer";
-  return "schwer";
+  return "sehr schwer";
 }
 
 /** Level der i-ten Aufgabe: steigt innerhalb der Runde vom Minimum zum Maximum der Spanne. */

@@ -47,6 +47,7 @@ export interface RoundFinish {
   speed_bonus: number;
   streak_bonus: number;
   penalty: number;
+  league_fee?: number;
   correct: number;
   wrong: number;
   best_streak: number;

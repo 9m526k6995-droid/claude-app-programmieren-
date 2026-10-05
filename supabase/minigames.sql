@@ -74,6 +74,17 @@ as $$
     when 'swipe'  then 400
     when 'find'   then 400
     when 'pattern' then 400
+    -- Dritte Welle
+    when 'count'  then 900
+    when 'mole'   then 1200
+    when 'spell'  then 400
+    when 'clock'  then 1500
+    when 'big'    then 400
+    when 'shape'  then 400
+    when 'order'  then 600
+    when 'newone' then 1500
+    when 'cups'   then 1500
+    when 'pair'   then 400
     else null
   end
 $$;

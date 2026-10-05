@@ -34,7 +34,10 @@
 
 - **Klare Navigation** mit fünf Tabs (Start, Spielen, Ranglisten, Freunde, Profil). Pro Bildschirm gibt es genau einen Hauptknopf, alles andere tritt zurück.
 - **Erklärkarte vor jeder Aufgabe** (4 Sekunden) in den gemischten Modi – niemand verliert, weil er ein Spiel nicht verstanden hat.
-- **Minigames als Einzelspiele**: Jedes der 12 Spiele hat einen Stufen-Lauf, der endlos schwerer wird, und eine eigene Rangliste. Das gibt Spielern mit einem Lieblingsspiel ein langfristiges Ziel („Stufe 20 in Merk dir's!“) und macht neue Rekorde teilbar. Die genaue Progression jedes Spiels steht in der README.
+- **Minigames als Einzelspiele**: Jedes der 22 Spiele hat einen Stufen-Lauf, der endlos schwerer wird, und eine eigene Rangliste. Das gibt Spielern mit einem Lieblingsspiel ein langfristiges Ziel („Stufe 20 in Merk dir's!“) und macht neue Rekorde teilbar. Die genaue Progression jedes Spiels steht in der README.
+
+- **Trophäen mit Liga-Einsatz**: Pro Runde wird je nach Liga ein Einsatz abgezogen. Unten kommt man schnell voran, oben muss man liefern – Meister und Legende sind ultra schwer, aber machbar. Dadurch bleibt die Weltrangliste spannend und Top-Plätze sind etwas wert.
+- **22 Minispiele** in allen Modi (die dritte Welle ab Daily #6).
 
 ## Roadmap (Ideen für weitere Modi)
 

@@ -91,15 +91,37 @@ select t_assert(t_error_of($$select finish_trophy_round((start_trophy_round() ->
                 'Sofort beendete Runde wird abgelehnt (Plausibilität)');
 reset role;
 
--- 15 richtige, alle sehr schnell: 150 + 45 + Serienbonus 5+10+15 = 225
-select t_assert((t_play(:A, t_tasks(15, 2, 0)) ->> 'delta')::int = 225, 'Perfekte Runde: +225 (Basis 150, Tempo 45, Serie 30)');
-select t_assert((select trophies from public.profiles where id = :A) = 225, 'Trophäenstand gespeichert');
+-- 15 richtige, alle sehr schnell (Anfänger, kein Einsatz): 90 + 30 + Serienbonus 5+10+15 = 150
+select t_assert((t_play(:A, t_tasks(15, 2, 0)) ->> 'delta')::int = 150, 'Perfekte Runde als Anfänger: +150 (Basis 90, Tempo 30, Serie 30)');
+select t_assert((select trophies from public.profiles where id = :A) = 150, 'Trophäenstand gespeichert');
 select t_assert((select best_streak from public.profiles where id = :A) = 15, 'Beste Serie gespeichert');
 select t_assert((select trophy_rounds from public.profiles where id = :A) = 1, 'Anzahl Runden gezählt');
 
--- 12 richtig (schnell), 3 falsch: 120 + 24 + Serie(5,10) 15 − 24 = 135
-select t_assert((t_play(:A, t_tasks(12, 1, 3)) ->> 'delta')::int = 135, '12 richtig / 3 falsch: +135');
-select t_assert((t_play(:A, t_tasks(4, 0, 11)) ->> 'delta')::int = 40 - 88, 'Schlechte Runde kostet Trophäen (−48)');
+-- 12 richtig (schnell), 3 falsch: 72 + 12 + Serie(5,10) 15 − 30 = 69
+select t_assert((t_play(:A, t_tasks(12, 1, 3)) ->> 'delta')::int = 69, '12 richtig / 3 falsch: +69');
+select t_assert((t_play(:A, t_tasks(4, 0, 11)) ->> 'delta')::int = 24 - 110, 'Schlechte Runde kostet Trophäen (−86)');
+
+-- Liga-Einsatz je nach Liga bei Rundenbeginn
+update public.profiles set trophies = 6000, best_trophies = 6000 where id = :C;
+select t_assert((t_play(:C, t_tasks(15, 2, 0)) ->> 'league_fee')::int = 30, 'Gold: Einsatz 30');
+update public.profiles set trophies = 6000 where id = :C;
+select t_assert((t_play(:C, t_tasks(15, 2, 0)) ->> 'delta')::int = 120, 'Gold, perfekte Runde: 150 − 30 = +120');
+update public.profiles set trophies = 6000 where id = :C;
+select t_assert((t_play(:C, t_tasks(12, 1, 3)) ->> 'delta')::int = 39, 'Gold, 12/15: 69 − 30 = +39');
+update public.profiles set trophies = 6000 where id = :C;
+select t_assert((t_play(:C, t_tasks(9, 0, 6)) ->> 'delta')::int = -31, 'Gold, 9/15: 54 + 5 − 60 − 30 = −31 (Minus!)');
+-- Abstieg
+update public.profiles set trophies = 5010 where id = :C;
+select t_assert(t_play(:C, t_tasks(9, 0, 6)) ->> 'new_league' = 'silber', 'Abstieg Gold → Silber wird gemeldet');
+-- Meister: nur 14/15 oder besser bringt Plus
+update public.profiles set trophies = 17000 where id = :C;
+select t_assert((t_play(:C, t_tasks(14, 1, 1)) ->> 'delta')::int = 13, 'Meister, 14/15: 103 − 90 = +13');
+update public.profiles set trophies = 17000 where id = :C;
+select t_assert((t_play(:C, t_tasks(13, 1, 2)) ->> 'delta')::int = -4, 'Meister, 13/15: 86 − 90 = −4');
+-- Legende: nur (fast) perfekt reicht
+update public.profiles set trophies = 20000, best_trophies = 20000 where id = :C;
+select t_assert((t_play(:C, t_tasks(14, 1, 1)) ->> 'new_trophies')::int = 19988, 'Legende, 14/15 (schnell): 103 − 115 = −12');
+update public.profiles set trophies = 0, best_trophies = 0 where id = :C;
 
 do $$ declare r jsonb; begin
   perform set_config('request.jwt.claim.sub', 'aaaaaaaa-0000-0000-0000-000000000001', false);

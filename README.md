@@ -1,6 +1,6 @@
 # ⚡ ZWIP
 
-**10 Blitz-Challenges. Jeden Tag neu. Für alle gleich. Plus 12 Minigames mit eigenen Ranglisten.**
+**10 Blitz-Challenges. Jeden Tag neu. Für alle gleich. Plus 22 Minigames mit eigenen Ranglisten.**
 
 ZWIP ist ein Mobile-first Web-Game für Jugendliche und junge Erwachsene. Kostenlos anmelden, einmal tippen, spielen. Keine Installation, keine Werbung, keine Lootboxen.
 
@@ -22,8 +22,18 @@ Eine Runde besteht aus 10 Mini-Challenges, die jeweils nur ein paar Sekunden dau
 | 🧠 | Merk dir's! | Aufleuchtende Felder in der gleichen Reihenfolge nachtippen |
 | 🥁 | Im Takt! | Drei Schläge hören, den vierten genau im Takt tippen |
 | 🧩 | Was kommt dann? | Ein Muster aus Symbolen fortsetzen |
+| 🔢 | Zähl schnell | Dinge blitzen kurz auf – wie viele waren es? |
+| 🔨 | Hau den Maulwurf | Maulwürfe antippen, Bomben nicht |
+| ✍️ | Richtig geschrieben? | Stimmt die Schreibweise: ✓ oder ✗ |
+| ⏱️ | Stoppuhr | Genau bei der Zielzeit tippen |
+| 🔝 | Größte Zahl | Die größte Zahl antippen (auch Komma, Minus, Brüche) |
+| 🔄 | Gleiche Form | Dieselbe Form finden – nur gedreht, nicht gespiegelt |
+| 1️⃣ | Der Reihe nach | Zahlen von klein nach groß antippen |
+| 🕵️ | Was ist neu? | Welches Emoji ist neu dazugekommen? |
+| 🥤 | Hütchenspiel | Den Becher mit dem Ball finden |
+| 👯 | Das Paar | Die zwei gleichen Emojis finden |
 
-Die letzten vier sind ab Daily #5 dabei (im Training und Endlos-Modus sofort). Jede Runde zieht 10 verschiedene Challenges.
+Find, Memory, Takt und Muster sind ab Daily #5 dabei, die zehn Spiele der dritten Welle ab Daily #6 (im Training, Endlos- und Trophäen-Modus sofort). Ältere Dailies und Duelle darauf bleiben exakt gleich. Jede Runde zieht 10 verschiedene Challenges.
 
 Schnell und richtig gibt bis zu 100 Punkte pro Challenge, maximal 1000. Die Schwierigkeit steigt innerhalb der Runde.
 
@@ -45,7 +55,7 @@ Oben rechts auf jeder Seite öffnet die **Flamme** den Trophäenpfad (`#/pfad`).
 
 ### Minigames – jedes Spiel einzeln
 
-Unter **Spielen → Minigames** gibt es alle 12 Spiele einzeln. Jedes hat eine Detailseite (Erklärung, „So wird's schwerer“, Bestleistung, Rang, Rangliste) und eine **eigene Rangliste**.
+Unter **Spielen → Minigames** gibt es alle 22 Spiele einzeln. Jedes hat eine Detailseite (Erklärung, „So wird's schwerer“, Bestleistung, Rang, Rangliste) und eine **eigene Rangliste**.
 
 - Ein Lauf geht Stufe für Stufe. Jede Stufe wird schwerer. Ein Fehler oder Zeit um = Lauf vorbei.
 - Kein langes Erklären: nur eine kurze Startkarte „3 · 2 · 1“.
@@ -66,6 +76,16 @@ Unter **Spielen → Minigames** gibt es alle 12 Spiele einzeln. Jedes hat eine D
 | 🔍 Wo ist es? | 12 → 48 Emojis, ab Stufe 7 zum Verwechseln ähnlich, Zeit 4,2 → 3 s |
 | 🥁 Im Takt! | 90 → 180 BPM, Toleranz 180 → 70 ms, ab Stufe 10 vier Vorgabe-Schläge |
 | 🧩 Was kommt dann? | Muster 2 → 3 (ab Stufe 4) → 4 Teile (ab 9), mehr Symbole, ab 12 vier Antworten, Zeit 4,2 → 2,8 s |
+| 🔢 Zähl schnell | 4 → 20 Dinge, sichtbar 1,4 → 0,45 s, ab Stufe 8 vier Antworten, weniger Antwortzeit |
+| 🔨 Hau den Maulwurf | 3 → 10 Maulwürfe, oben 1,1 → 0,42 s, ab Stufe 4 Bomben (10 % → 40 %), ab 12 ein 4×4-Feld |
+| ✍️ Richtig geschrieben? | Alltagswörter (1–4), knifflige Wörter (5–9), Fremdwörter (ab 10), Zeit 3,2 → 1,6 s |
+| ⏱️ Stoppuhr | Toleranz ±0,22 → ±0,04 s, ab Stufe 4 wird die Uhr unterwegs unsichtbar (immer früher) |
+| 🔝 Größte Zahl | Zahlen bis 99 → dreistellig knapp (4–7) → Kommazahlen (8–11) → Minus (12–15) → Brüche (ab 16), 3 → 6 Zahlen |
+| 🔄 Gleiche Form | 4 → 8 Kästchen, ab Stufe 6 vier Formen, gespiegelte Formen als Falle, Zeit 4,4 → 2,6 s |
+| 1️⃣ Der Reihe nach | 4 → 12 Zahlen, ab Stufe 8 mit Lücken, ab 14 mit Minuszahlen, weniger Zeit pro Zahl |
+| 🕵️ Was ist neu? | 4 → 14 Emojis, sichtbar 2,0 → 0,7 s, ab Stufe 6 sehr ähnliche Emojis, ab 10 wechseln alle den Platz |
+| 🥤 Hütchenspiel | 3 → 20 Vertauschungen, immer schneller, ab Stufe 10 vier Becher |
+| 👯 Das Paar | 8 → 36 Emojis, ab Stufe 6 sehr ähnliche Emojis, Zeit 4,6 → 3 s |
 
 Alle Werte stehen in `src/games.ts` (`stage(n)` pro Spiel) und werden in den Tests für die Stufen 1–60 geprüft: Es wird nie leichter, und es gibt feste Grenzen, damit es nie unmöglich wird.
 
@@ -76,7 +96,21 @@ Beim Öffnen erscheint ein Startmenü mit **Anmelden** und **Registrieren** (E-M
 ### Trophäen, Weltrangliste und Freunde
 
 - **Flamme oben rechts** zeigt den Trophäenstand (z. B. 🔥 2.460) und öffnet den **Trophäenpfad**: ein geschwungener Pfad von 0 bis 20.000 mit Meilensteinen und 8 Ligen (Anfänger, Bronze, Silber, Gold, Platin, Diamant, Meister, Legende).
-- **Trophäen-Modus**: 15 Aufgaben aus allen Minispielen. Richtig +10, schnell +2, sehr schnell +3, falsch oder Zeit um −8, Serienbonus bei 5/10/15 richtigen am Stück. Schwierigkeit steigt mit dem Trophäenstand.
+- **Trophäen-Modus**: 15 verschiedene Aufgaben aus allen 22 Minispielen. Richtig +6, schnell +1, sehr schnell +2, falsch oder Zeit um −10, Serienbonus +5/+10/+15 bei 5/10/15 richtigen am Stück. Schwierigkeit steigt mit dem Trophäenstand (Meister/Legende: sehr schwer).
+- **Liga-Einsatz**: Am Ende jeder Runde wird je nach Liga (bei Rundenbeginn) etwas abgezogen. Dadurch kann man Trophäen verlieren und auch absteigen (nie unter 0). Die beiden obersten Ligen sind ultra schwer, aber machbar:
+
+  | Liga | Einsatz | perfekt (15/15, sehr schnell) | gut (12/15) | schwach (9/15) |
+  |---|---|---|---|---|
+  | 🌱 Anfänger | 0 | +150 | +69 | +8 |
+  | 🥉 Bronze | −10 | +140 | +59 | −2 |
+  | 🥈 Silber | −20 | +130 | +49 | −12 |
+  | 🥇 Gold | −30 | +120 | +39 | −22 |
+  | 💠 Platin | −45 | +105 | +24 | −37 |
+  | 💎 Diamant | −60 | +90 | +9 | −52 |
+  | 👑 Meister | −90 | +60 | −21 | −82 |
+  | 🏆 Legende | −115 | +35 | −46 | −107 |
+
+  (Beispiele mit Tempobonus „schnell“ bei 12/15 und 9/15.) Als Meister braucht man etwa 14/15, als Legende eine (fast) perfekte, schnelle Runde.
 - **Weltrangliste** (Ranglisten → „Trophäen (Welt)“): ausschließlich nach Trophäen absteigend, Top 100, eigener Rang und Nachbarn.
 - **Freunde**: Spieler über den Namen suchen, Anfragen senden/annehmen/ablehnen, Freunde ansehen und entfernen.
 - Die Trophäen rechnet der **Server** aus (Supabase-Funktionen in `supabase/trophies.sql`), nicht das Handy.
@@ -174,6 +208,7 @@ supabase/profiles.sql Benutzerprofile (Grundlage für Highscores, Fortschritt us
 supabase/trophies.sql Trophäen, Weltrangliste, Freunde (Funktionen + Sicherheitsregeln)
 supabase/profile.sql  Profilbild und öffentliches Profil (Profil-Links)
 supabase/minigames.sql Minigame-Läufe und Ranglisten pro Spiel
+src/games.ts / games2.ts  Die 22 Minispiele (games2.ts = dritte Welle), gameKit.ts = gemeinsame Bausteine
 supabase/schema.sql   Alte Tages-Punkteliste (wird nicht mehr genutzt)
 tests/                Logik-, Bestenlisten- und Browser-Tests
 ```

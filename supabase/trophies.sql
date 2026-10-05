@@ -215,7 +215,26 @@ begin
 end;
 $$;
 
+-- Liga-Einsatz: wird am Ende jeder Runde abgezogen, maßgeblich ist der Stand bei Rundenbeginn.
+-- Je höher die Liga, desto mehr muss man liefern, um nicht zu verlieren.
+create or replace function public.zwip_league_fee(p_trophies integer)
+returns integer
+language sql immutable set search_path = ''
+as $$
+  select case
+    when p_trophies >= 20000 then 115  -- Legende
+    when p_trophies >= 16000 then 90   -- Meister
+    when p_trophies >= 12000 then 60   -- Diamant
+    when p_trophies >= 8000  then 45   -- Platin
+    when p_trophies >= 5000  then 30   -- Gold
+    when p_trophies >= 2500  then 20   -- Silber
+    when p_trophies >= 1000  then 10   -- Bronze
+    else 0                             -- Anfänger
+  end
+$$;
+
 -- Trophäen-Runde beenden. Der SERVER rechnet die Trophäen aus.
+-- Richtig +6, schnell +1, sehr schnell +2, falsch/Zeit um −10, Serienbonus +5/+10/+15, minus Liga-Einsatz.
 -- p_tasks: 15 Einträge {game, ok, timeout, tier (0 normal | 1 schnell | 2 sehr schnell), ms}
 create or replace function public.finish_trophy_round(p_round_id uuid, p_tasks jsonb)
 returns jsonb
@@ -227,7 +246,7 @@ declare
   p public.profiles;
   t jsonb;
   ok boolean; tier integer;
-  base integer := 0; speed integer := 0; streak_bonus integer := 0; penalty integer := 0;
+  base integer := 0; speed integer := 0; streak_bonus integer := 0; penalty integer := 0; fee integer := 0;
   streak integer := 0; best integer := 0; correct integer := 0; wrong integer := 0;
   raw_delta integer; new_trophies integer; applied integer;
 begin
@@ -252,19 +271,20 @@ begin
     tier := least(greatest(coalesce((t ->> 'tier')::integer, 0), 0), 2);
     if ok then
       correct := correct + 1;
-      base := base + 10;
-      speed := speed + case tier when 2 then 3 when 1 then 2 else 0 end;
+      base := base + 6;
+      speed := speed + case tier when 2 then 2 when 1 then 1 else 0 end;
       streak := streak + 1;
       if streak in (5, 10, 15) then streak_bonus := streak_bonus + streak; end if;
       best := greatest(best, streak);
     else
       wrong := wrong + 1;
-      penalty := penalty + 8;
+      penalty := penalty + 10;
       streak := 0;
     end if;
   end loop;
 
-  raw_delta := base + speed + streak_bonus - penalty;
+  fee := public.zwip_league_fee(rnd.start_trophies);
+  raw_delta := base + speed + streak_bonus - penalty - fee;
 
   select * into p from public.profiles where id = me for update;
   new_trophies := least(greatest(p.trophies + raw_delta, 0), 20000);
@@ -285,7 +305,7 @@ begin
 
   return jsonb_build_object(
     'old_trophies', p.trophies, 'new_trophies', new_trophies, 'delta', applied, 'raw_delta', raw_delta,
-    'base', base, 'speed_bonus', speed, 'streak_bonus', streak_bonus, 'penalty', penalty,
+    'base', base, 'speed_bonus', speed, 'streak_bonus', streak_bonus, 'penalty', penalty, 'league_fee', fee,
     'correct', correct, 'wrong', wrong, 'best_streak', best,
     'old_league', p.league, 'new_league', (select league from public.profiles where id = me),
     'world_rank', (select world_rank from public.zwip_ranked() where id = me));
@@ -451,6 +471,7 @@ $$;
 revoke all on function public.zwip_ranked() from public, anon, authenticated;
 revoke all on function public.zwip_me() from public, anon, authenticated;
 revoke all on function public.zwip_player_json(uuid) from public, anon, authenticated;
+revoke all on function public.zwip_league_fee(integer) from public, anon, authenticated;
 
 revoke all on function public.get_my_trophy_profile() from public, anon;
 revoke all on function public.set_username(text) from public, anon;

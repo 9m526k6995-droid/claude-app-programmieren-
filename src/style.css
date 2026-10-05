@@ -3585,3 +3585,410 @@ html {
   font-size: 15px;
   padding-inline: 10px;
 }
+
+.tr-down {
+  padding: 12px 14px;
+  border-radius: 16px;
+  background: rgba(255, 61, 90, 0.14);
+  box-shadow: inset 0 0 0 2px rgba(255, 61, 90, 0.5);
+  color: #ffd0d8;
+  font-weight: 800;
+  text-align: center;
+}
+
+/* =====================================================================
+   Zweite Welle: 10 weitere Minispiele
+   ===================================================================== */
+/* gemeinsame Antwort-Knöpfe */
+.cnt-btn,
+.big-btn,
+.shape-btn {
+  min-height: 64px;
+  border-radius: 22px;
+  background: var(--paper);
+  color: var(--ink);
+  font-weight: 900;
+  box-shadow: 0 6px 0 rgba(0, 0, 0, 0.3);
+}
+.cnt-btn:active,
+.big-btn:active,
+.shape-btn:active {
+  transform: translateY(3px);
+  box-shadow: 0 3px 0 rgba(0, 0, 0, 0.3);
+}
+.cnt-btn.hit,
+.big-btn.hit,
+.shape-btn.hit,
+.pair-cell.hit,
+.new-cell.hit {
+  background: var(--lime);
+}
+.cnt-btn.miss,
+.big-btn.miss,
+.shape-btn.miss,
+.pair-cell.miss,
+.new-cell.miss {
+  background: var(--red);
+  color: #fff;
+}
+.cnt-btn.reveal,
+.big-btn.reveal,
+.shape-btn.reveal,
+.pair-cell.reveal,
+.new-cell.reveal,
+.order-btn.reveal {
+  outline: 5px dashed #fff;
+  outline-offset: 2px;
+}
+
+/* Zähl schnell */
+.cnt-wrap {
+  position: absolute;
+  inset: 12px;
+  display: grid;
+  grid-template-rows: minmax(0, 1fr) auto;
+  gap: 14px;
+}
+.cnt-field {
+  position: relative;
+  border-radius: 22px;
+  background: rgba(22, 16, 31, 0.28);
+  transition: opacity 0.12s;
+}
+.cnt-field.gone {
+  opacity: 0;
+}
+.cnt-item {
+  position: absolute;
+  transform: translate(-50%, -50%);
+  font-size: 40px;
+  line-height: 1;
+  animation: tile-in 0.2s backwards;
+}
+.cnt-item.small {
+  font-size: 30px;
+}
+.cnt-choices {
+  display: grid;
+  grid-template-columns: repeat(var(--cols, 3), minmax(0, 1fr));
+  gap: 10px;
+  visibility: hidden;
+}
+.cnt-choices.on {
+  visibility: visible;
+  animation: tile-in 0.2s;
+}
+.cnt-btn {
+  font-size: 34px;
+}
+
+/* Hau den Maulwurf */
+.mole-grid {
+  display: grid;
+  grid-template-columns: repeat(var(--side, 3), minmax(0, 1fr));
+  gap: 12px;
+  width: min(92%, 420px);
+  aspect-ratio: 1;
+}
+.mole-hole {
+  position: relative;
+  border-radius: 50%;
+  background: radial-gradient(circle at 50% 60%, #2a1a10 0 55%, #5b3a22 56% 100%);
+  box-shadow: inset 0 6px 0 rgba(0, 0, 0, 0.35);
+  overflow: hidden;
+}
+.mole-pop {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  font-size: clamp(34px, 11vw, 54px);
+  transform: translateY(70%);
+  opacity: 0;
+  transition:
+    transform 0.09s ease-out,
+    opacity 0.09s;
+}
+.mole-pop.up {
+  transform: translateY(0);
+  opacity: 1;
+}
+.mole-pop.bonk {
+  transform: scale(0.8) translateY(10%);
+  filter: brightness(1.4);
+}
+.mole-pop.boom {
+  background: var(--red);
+  transform: scale(1.1);
+}
+.mole-hole:has(.missed) {
+  box-shadow: inset 0 0 0 5px var(--red);
+}
+.mole-grid[style*="--side:4"] {
+  gap: 8px;
+}
+
+/* Richtig geschrieben? */
+.spell-word {
+  padding: 14px 22px;
+  border-radius: 22px;
+  background: var(--paper);
+  color: var(--ink);
+  font-size: clamp(34px, 10vw, 52px);
+  font-weight: 900;
+  box-shadow: 0 6px 0 rgba(0, 0, 0, 0.25);
+  max-width: 100%;
+  overflow-wrap: anywhere;
+  text-align: center;
+}
+.spell-word.long {
+  font-size: clamp(26px, 7.4vw, 40px);
+}
+
+/* Stoppuhr */
+.clock-wrap {
+  display: grid;
+  justify-items: center;
+  gap: 18px;
+  text-align: center;
+}
+.clock-goal {
+  padding: 8px 18px;
+  border-radius: 999px;
+  background: var(--paper);
+  color: var(--ink);
+  font-weight: 900;
+  font-size: 20px;
+}
+.clock-face {
+  min-width: 4.2ch;
+  font-size: clamp(72px, 24vw, 110px);
+  font-weight: 900;
+  font-variant-numeric: tabular-nums;
+  line-height: 1;
+  text-shadow: 0 6px 0 rgba(0, 0, 0, 0.3);
+}
+.clock-face.hidden-time {
+  color: transparent;
+  text-shadow: none;
+  background: repeating-linear-gradient(45deg, rgba(255, 255, 255, 0.18) 0 10px, transparent 10px 20px);
+  border-radius: 20px;
+}
+.clock-face.hit {
+  color: var(--lime);
+}
+.clock-face.miss {
+  color: var(--red);
+}
+.clock-tip {
+  font-weight: 800;
+  opacity: 0.85;
+}
+
+/* Größte Zahl */
+.big-grid {
+  display: grid;
+  grid-template-columns: repeat(var(--cols, 2), minmax(0, 1fr));
+  gap: 12px;
+  width: min(92%, 420px);
+}
+.big-btn {
+  min-height: 84px;
+  font-size: clamp(30px, 9vw, 44px);
+  font-variant-numeric: tabular-nums;
+}
+.big-btn.long {
+  font-size: clamp(24px, 7vw, 34px);
+}
+
+/* Gleiche Form */
+.shape-wrap {
+  display: grid;
+  justify-items: center;
+  gap: 22px;
+  width: min(92%, 420px);
+}
+.shape-ref {
+  padding: 16px;
+  border-radius: 22px;
+  background: rgba(22, 16, 31, 0.78);
+  box-shadow: 0 6px 0 rgba(0, 0, 0, 0.25);
+}
+.shape-grid {
+  display: grid;
+  grid-template-columns: repeat(var(--s), 1fr);
+  gap: 3px;
+  width: 64px;
+  aspect-ratio: 1;
+}
+.shape-grid.big {
+  width: 110px;
+}
+.shape-grid i {
+  border-radius: 3px;
+}
+.shape-grid i.on {
+  background: var(--lime);
+}
+.shape-btn .shape-grid i.on {
+  background: var(--violet);
+}
+.shape-opts {
+  display: grid;
+  grid-template-columns: repeat(var(--cols, 3), minmax(0, 1fr));
+  gap: 10px;
+  width: 100%;
+}
+.shape-btn {
+  display: grid;
+  place-items: center;
+  aspect-ratio: 1;
+  padding: 10px;
+}
+.shape-btn .shape-grid {
+  width: 100%;
+}
+
+/* Der Reihe nach */
+.order-field {
+  position: absolute;
+  inset: 0;
+}
+.order-btn {
+  position: absolute;
+  width: 58px;
+  height: 58px;
+  border-radius: 50%;
+  transform: translate(-50%, -50%);
+  background: var(--paper);
+  color: var(--ink);
+  font-size: 22px;
+  font-weight: 900;
+  box-shadow: 0 5px 0 rgba(0, 0, 0, 0.3);
+  animation: tile-in 0.25s backwards cubic-bezier(0.2, 1.4, 0.4, 1);
+}
+.order-btn.done {
+  background: var(--lime);
+  opacity: 0.45;
+  transform: translate(-50%, -50%) scale(0.85);
+}
+.order-btn.miss {
+  background: var(--red);
+  color: #fff;
+}
+
+/* Was ist neu? */
+.new-wrap {
+  display: grid;
+  gap: 14px;
+  width: min(92%, 420px);
+}
+.new-grid {
+  display: grid;
+  grid-template-columns: repeat(var(--side, 3), minmax(0, 1fr));
+  gap: 8px;
+  aspect-ratio: 1;
+  transition: filter 0.1s;
+}
+.new-grid.covered .new-cell {
+  color: transparent;
+  background: rgba(22, 16, 31, 0.7);
+}
+.new-grid:not(.ready) .new-cell {
+  pointer-events: none;
+}
+.new-cell {
+  display: grid;
+  place-items: center;
+  border-radius: 16px;
+  background: rgba(255, 255, 255, 0.16);
+  font-size: clamp(28px, 9vw, 44px);
+}
+
+/* Hütchenspiel */
+.cups-wrap {
+  display: grid;
+  gap: 24px;
+  width: min(94%, 440px);
+}
+.cups-table {
+  position: relative;
+  height: 160px;
+}
+.cup {
+  position: absolute;
+  bottom: 0;
+  left: calc(var(--slot) * (100% / var(--n)));
+  width: calc(100% / var(--n));
+  height: 100%;
+  transition: left var(--swap, 300ms) ease-in-out;
+}
+.cups-table:not(.ready) .cup {
+  pointer-events: none;
+}
+.cup-body {
+  position: absolute;
+  left: 50%;
+  bottom: 10px;
+  z-index: 2;
+  width: min(76px, 80%);
+  height: 92px;
+  transform: translateX(-50%);
+  clip-path: polygon(18% 0, 82% 0, 100% 100%, 0 100%);
+  border-radius: 10px 10px 4px 4px;
+  background:
+    linear-gradient(90deg, rgba(255, 255, 255, 0.35) 0 12%, transparent 12% 100%),
+    linear-gradient(180deg, #ff6a5a, #c4162f);
+  box-shadow: inset 0 -8px 0 rgba(0, 0, 0, 0.2);
+  transition: transform 0.25s ease-out;
+}
+.cup-body::after {
+  content: "";
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  height: 12px;
+  background: #fff3;
+}
+.cup.lift .cup-body {
+  transform: translateX(-50%) translateY(-64px);
+}
+.cup-ball {
+  position: absolute;
+  left: 50%;
+  bottom: 14px;
+  z-index: 1;
+  font-size: 34px;
+  transform: translateX(-50%);
+}
+.cup.hit .cup-body {
+  filter: drop-shadow(0 0 12px var(--lime));
+}
+.cup.miss .cup-body {
+  filter: drop-shadow(0 0 12px var(--red));
+}
+
+/* Das Paar */
+.pair-grid {
+  display: grid;
+  grid-template-columns: repeat(var(--cols, 4), minmax(0, 1fr));
+  gap: 6px;
+  width: min(94%, 440px);
+}
+.pair-cell {
+  aspect-ratio: 1;
+  display: grid;
+  place-items: center;
+  border-radius: 14px;
+  background: rgba(255, 255, 255, 0.18);
+  font-size: clamp(26px, 8vw, 40px);
+  animation: tile-in 0.2s backwards;
+}
+.pair-grid.dense {
+  gap: 4px;
+}
+.pair-grid.dense .pair-cell {
+  font-size: clamp(20px, 6.4vw, 32px);
+  border-radius: 10px;
+}

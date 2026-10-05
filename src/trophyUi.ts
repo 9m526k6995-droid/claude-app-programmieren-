@@ -13,6 +13,7 @@ import {
   formatTrophies,
   formatDelta,
   difficultyLabel,
+  leagueFee,
   type League,
   type RoundScore,
 } from "./trophies";
@@ -201,7 +202,7 @@ export function renderPath(app: HTMLElement, p: MyProfile | null, state: { error
     </div>
     <div class="path-cta">
       <button class="btn primary big" data-p="play">🏆 Trophäen-Modus spielen</button>
-      <small class="muted">${TROPHY_TASKS} Aufgaben · Schwierigkeit: ${difficultyLabel(trophies)} · richtig +10, falsch −8</small>
+      <small class="muted">${TROPHY_TASKS} Aufgaben · ${difficultyLabel(trophies)} · richtig +6, falsch −10${leagueFee(trophies) ? ` · Liga-Einsatz −${leagueFee(trophies)}` : ""}</small>
     </div>
   </div>`;
 
@@ -267,6 +268,11 @@ export function renderTrophyResult(
   const speed = s?.speed_bonus ?? d.local.speed;
   const streak = s?.streak_bonus ?? d.local.streakBonus;
   const penalty = s?.penalty ?? d.local.penalty;
+  const fee = s?.league_fee ?? d.local.fee;
+  const feeLeague = leagueFor(d.startTrophies);
+  const oldL = s ? leagueById(s.old_league) : null;
+  const newL = s ? leagueById(s.new_league) : null;
+  const relegated = Boolean(oldL && newL && LEAGUES.indexOf(newL) < LEAGUES.indexOf(oldL));
   const raw = s?.raw_delta ?? d.local.raw;
   const applied = s?.delta ?? raw;
   const oldT = s?.old_trophies ?? d.startTrophies;
@@ -301,6 +307,7 @@ export function renderTrophyResult(
       <div class="tr-arrow" aria-hidden="true">→</div>
       <div><span>Neuer Stand</span><b id="tr-new">${formatTrophies(s ? oldT : newT)}</b></div>
     </div>
+    ${relegated ? `<div class="tr-down" role="status">Abgestiegen: ${newL!.emoji} ${newL!.name}. Hol dir die Liga zurück!</div>` : ""}
     <div class="tr-league">${leagueBadge(leagueFor(newT))}${s?.world_rank ? `<span class="muted">Weltrang #${s.world_rank}</span>` : ""}</div>
     <dl class="tr-rows">
       <div><dt>Richtige Antworten</dt><dd>${correct} / ${TROPHY_TASKS}</dd></div>
@@ -309,7 +316,8 @@ export function renderTrophyResult(
       <div class="sep"><dt>Basis-Trophäen</dt><dd class="pos">${formatDelta(base)}</dd></div>
       <div><dt>Geschwindigkeitsbonus</dt><dd class="pos">${formatDelta(speed)}</dd></div>
       <div><dt>Serienbonus</dt><dd class="pos">${formatDelta(streak)}</dd></div>
-      <div><dt>Abzüge</dt><dd class="neg">${penalty ? formatDelta(-penalty) : "0"}</dd></div>
+      <div><dt>Abzüge für Fehler</dt><dd class="neg">${penalty ? formatDelta(-penalty) : "0"}</dd></div>
+      <div><dt>Liga-Einsatz (${feeLeague.name})</dt><dd class="neg">${fee ? formatDelta(-fee) : "0"}</dd></div>
       <div class="total"><dt>GESAMT</dt><dd class="${sign(applied)}">${formatDelta(applied)} TROPHÄEN</dd></div>
     </dl>
     <div class="actions">

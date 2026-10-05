@@ -27,7 +27,7 @@ import {
 import { confetti, floatText, shake, countUp } from "./fx";
 import { publicBase, CONFIG } from "./config";
 import { restoreSession, currentUser, signOut, onAuthChange } from "./auth";
-import { TROPHY_TASKS, scoreRound, tierFor, levelFor, formatTrophies, formatDelta, LEAGUES, type TaskResult } from "./trophies";
+import { TROPHY_TASKS, scoreRound, tierFor, levelFor, formatTrophies, formatDelta, leagueFee, LEAGUES, type TaskResult } from "./trophies";
 import {
   startTrophyRound,
   finishTrophyRound,
@@ -396,7 +396,7 @@ function playMenuScreen() {
     <div class="mode-list">
       ${modeCard({ act: "daily", icon: "⚡", title: `Daily #${t}`, desc: played ? "Heute schon gespielt – morgen gibt's eine neue." : "10 Challenges – für alle gleich, jeden Tag neu.", meta: played ? `<b>${played.score}</b>` : `<em class="tag">Neu</em>`, cls: "c-daily" })}
       ${modeCard({ act: "tmode", icon: "🏆", title: "Trophäen-Modus", desc: "15 Aufgaben – sammle Trophäen und steig in den Ligen auf.", meta: `<b>🔥 ${myTrophyLabel()}</b>`, cls: "c-trophy" })}
-      ${modeCard({ href: "#/minigames", icon: "🎮", title: "Minigames", desc: "Jedes Spiel einzeln – Stufe für Stufe schwerer.", meta: `<em class="tag lime">12 Spiele</em>`, cls: "c-mini" })}
+      ${modeCard({ href: "#/minigames", icon: "🎮", title: "Minigames", desc: "Jedes Spiel einzeln – Stufe für Stufe schwerer.", meta: `<em class="tag lime">22 Spiele</em>`, cls: "c-mini" })}
       ${modeCard({ act: "free", icon: "🏋️", title: "Training", desc: "10 zufällige Challenges – so oft du willst.", meta: S.best.free ? `Best <b>${S.best.free}</b>` : "" })}
       ${modeCard({ act: "endless", icon: "♾️", title: "Endlos", desc: "Bis zum ersten Fehler.", meta: S.best.endless ? `Best <b>${S.best.endless}</b>` : "" })}
     </div>`,
@@ -1418,6 +1418,12 @@ async function startTrophyRun() {
   trophyScreen();
   const holder = document.getElementById("holder")!;
   const $ = (id: string) => document.getElementById(id)!;
+  // Der Liga-Einsatz steht von Anfang an in der Rundenbilanz
+  const fee0 = leagueFee(start.trophies);
+  if (fee0) {
+    $("t-round").textContent = `Runde: ${formatDelta(-fee0)}`;
+    $("t-round").className = "t-round neg";
+  }
 
   for (let i = 0; i < specs.length && !aborted; i++) {
     const spec = specs[i];
@@ -1430,7 +1436,7 @@ async function startTrophyRun() {
     const ok = r.ok && !r.timeout;
     const ms = Math.round(r.ms ?? r.elapsed);
     tasks.push({ game: g.id, ok, timeout: r.timeout, tier: ok ? tierFor(ms, g.speed) : 0, ms });
-    const sc = scoreRound(tasks);
+    const sc = scoreRound(tasks, start.trophies);
     const step = sc.steps[sc.steps.length - 1];
     $("t-streak").textContent = `🔥 ${step.streak ? `${step.streak}er-Serie` : "Serie 0"}`;
     $("t-streak").classList.toggle("hot", step.streak >= 3);
@@ -1450,7 +1456,7 @@ async function startTrophyRun() {
   // Der Server wertet nur realistisch lange Runden (mind. 20 s). Bei frühem Abbruch kurz warten.
   const wait = 20500 - (performance.now() - startedAt);
   if (wait > 0) {
-    renderTrophyResult(app, { server: null, local: scoreRound(tasks), startTrophies: start.trophies, saving: true }, trophyResultHandlers());
+    renderTrophyResult(app, { server: null, local: scoreRound(tasks, start.trophies), startTrophies: start.trophies, saving: true }, trophyResultHandlers());
     await sleep(wait);
   }
   await submitTrophyRun();
@@ -1487,7 +1493,7 @@ function trophyResultHandlers() {
 async function submitTrophyRun() {
   if (!trophyRun) return;
   const { start, tasks } = trophyRun;
-  const local = scoreRound(tasks);
+  const local = scoreRound(tasks, start.trophies);
   const h = trophyResultHandlers();
   renderTrophyResult(app, { server: null, local, startTrophies: start.trophies, saving: true }, h);
   try {
@@ -1511,9 +1517,13 @@ async function submitTrophyRun() {
       await sleep(500);
       sfx.win();
       await leagueUp(res.new_league, res.new_trophies);
+    } else if (rank(res.new_league) < rank(res.old_league)) {
+      sfx.bad();
     } else if (res.delta > 0) {
       sfx.win();
-      if (res.delta >= 150) confetti();
+      if (res.delta >= 100) confetti();
+    } else if (res.delta < 0) {
+      sfx.bad();
     }
   } catch (e) {
     if (e instanceof SocialError && e.code === "round_not_active") {
