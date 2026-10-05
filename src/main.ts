@@ -27,6 +27,10 @@ import {
 import { confetti, floatText, shake, countUp } from "./fx";
 import { publicBase, CONFIG } from "./config";
 import { restoreSession, currentUser, signOut, onAuthChange } from "./auth";
+import { stagePoints, fmtScore, scoreFromStage } from "./score";
+import { renderClan, renderClanBoard, CLAN_PERIODS } from "./clanUi";
+import { emblemHtml } from "./clanKit";
+import { startBadges, stopBadges, refreshBadges, friendsOpened } from "./badges";
 import { TROPHY_TASKS, scoreRound, tierFor, levelFor, formatTrophies, formatDelta, leagueFee, LEAGUES, type TaskResult } from "./trophies";
 import {
   startTrophyRound,
@@ -42,7 +46,8 @@ import {
   setCachedAvatar,
   startMinigameRun,
   finishMinigameRun,
-  getMinigameBoard,
+  getMinigameRanking,
+  getPlayerClan,
   getMyMinigameBests,
   type MyProfile,
   type MinigameBest,
@@ -56,11 +61,13 @@ import { routeParts, go, shellHtml, replaceRoute, type TabId } from "./nav";
 import {
   minigameGridHtml,
   minigameDetailHtml,
-  minigameBoardHtml,
+  minigameRankingHtml,
+  rankScopeHtml,
+  bestScore,
+  type RankScope,
   minigameRunHtml,
   minigameResultHtml,
   minigameShareText,
-  startCard,
   stageClear,
   type BestMap,
   type MgResultView,
@@ -296,7 +303,10 @@ function renderRoute() {
     case "ranglisten":
       return void boardsScreen(parts[1], parts[2]);
     case "freunde":
+      friendsOpened();
       return friendsScreen();
+    case "clan":
+      return clanScreen(parts[1], parts[2]);
     case "profil":
       return profileScreen();
     case "pfad":
@@ -305,6 +315,9 @@ function renderRoute() {
       return startScreen();
   }
 }
+
+/** Nach jedem Seitenwechsel auch die Badges auffrischen (gedrosselt). */
+window.addEventListener("hashchange", () => void (currentUser() && refreshBadges()));
 
 window.addEventListener("hashchange", () => {
   if (!currentUser()) return;
@@ -438,8 +451,8 @@ async function showIntro(holder: HTMLElement, spec: RoundSpec, label: string) {
 }
 
 /**
- * Erklärkarte vor jeder Aufgabe in den gemischten Modi: genau EXPLAIN Millisekunden (4 s), mit Countdown.
- * Lässt sich bewusst nicht wegtippen. Abbrechen (✕) beendet sie sofort.
+ * Erklärkarte vor jeder Aufgabe (alle Modi und Minigames): Wer verstanden hat, tippt auf „OK, los!“ und es geht
+ * sofort los. Sonst startet die Aufgabe nach EXPLAIN Millisekunden (4 s) von selbst. Abbrechen (✕) beendet sie sofort.
  */
 async function explainGame(holder: HTMLElement, g: MicroGame, label: string) {
   const secs = Math.ceil(EXPLAIN / 1000);
@@ -454,30 +467,50 @@ async function explainGame(holder: HTMLElement, g: MicroGame, label: string) {
     <div class="intro-title">${g.title}</div>
     <p class="explain-text">${g.howto}</p>
     <div class="intro-hint">💡 ${g.hint}</div>
+    <button class="explain-ok" type="button">OK, los! ⚡</button>
     <div class="explain-count" aria-live="polite">
       <span class="explain-bar"><i style="animation-duration:${EXPLAIN}ms"></i></span>
-      <b>Los geht's in <span class="explain-n">${secs}</span> s</b>
+      <b>Startet von selbst in <span class="explain-n">${secs}</span> s</b>
     </div>`;
   holder.replaceChildren(intro);
   sfx.tick();
   const n = intro.querySelector<HTMLElement>(".explain-n")!;
+  const ok = intro.querySelector<HTMLButtonElement>(".explain-ok")!;
   const t0 = performance.now();
+  let pressed = false;
   await new Promise<void>((res) => {
-    const iv = window.setInterval(() => {
-      const left = EXPLAIN - (performance.now() - t0);
-      if (aborted || left <= 0) {
-        clearInterval(iv);
-        res();
-        return;
+    let iv = 0;
+    const done = () => {
+      clearInterval(iv);
+      res();
+    };
+    ok.addEventListener("pointerdown", (e) => {
+      e.preventDefault();
+      e.stopPropagation();
+      pressed = true;
+      done();
+    });
+    ok.addEventListener("keydown", (e) => {
+      if (e.key === "Enter" || e.key === " ") {
+        e.preventDefault();
+        pressed = true;
+        done();
       }
+    });
+    iv = window.setInterval(() => {
+      const left = EXPLAIN - (performance.now() - t0);
+      if (aborted || left <= 0) return done();
       const s = String(Math.ceil(left / 1000));
       if (n.textContent !== s) n.textContent = s;
     }, 100);
   });
   if (aborted) return;
-  intro.querySelector(".explain-count b")!.textContent = "Los! ⚡";
+  ok.disabled = true;
+  ok.classList.add("go");
+  ok.textContent = "Los! ⚡";
+  intro.querySelector(".explain-count")!.classList.add("hidden");
   sfx.tick();
-  await sleep(350);
+  await sleep(pressed ? 220 : 350);
 }
 
 interface RoundResult extends Outcome {
@@ -485,6 +518,8 @@ interface RoundResult extends Outcome {
   /** Antwortzeit ab Ende der Vorbereitungsphase (ms) */
   elapsed: number;
   timeout: boolean;
+  /** Bei Fehler/Zeitablauf wurde die richtige Lösung markiert → etwas länger zeigen */
+  solution?: boolean;
 }
 
 /**
@@ -515,16 +550,26 @@ function playRound(holder: HTMLElement, spec: RoundSpec): Promise<RoundResult> {
       e.preventDefault();
       e.stopImmediatePropagation();
     };
+    /** Markiert bei Fehler oder Zeitablauf die richtige Lösung (jedes Spiel, das ein „target“ hat). */
+    const revealSolution = (): boolean => {
+      if (!exposed) return false;
+      let t = exposed.target as unknown;
+      if (typeof t === "function") t = (t as () => unknown)();
+      const els = [t, ...((exposed.solutionAlso as unknown[]) ?? [])].filter((e): e is HTMLElement => e instanceof HTMLElement);
+      els.forEach((e) => e.classList.add("solution"));
+      return els.length > 0;
+    };
     const finish = (o: Outcome) => {
       if (done || !unlocked) return; // Eingaben während der Vorbereitung zählen nicht
       done = true;
       clearTimeout(timeout);
       const elapsed = performance.now() - t0;
+      const solution = !o.ok && revealSolution();
       cleanup?.();
       hook.round = null;
       timer.style.transition = "none";
       timer.style.width = getComputedStyle(timer).width;
-      resolve({ ...o, points: roundPoints(o.ok, elapsed, limit, o.rating), elapsed, timeout: timedOut });
+      resolve({ ...o, points: roundPoints(o.ok, elapsed, limit, o.rating), elapsed, timeout: timedOut, solution });
     };
     const mounted = g.mount({
       el: stage,
@@ -536,7 +581,7 @@ function playRound(holder: HTMLElement, spec: RoundSpec): Promise<RoundResult> {
         finish(o);
       },
       sfx,
-      expose: E2E ? (info) => (exposed = info) : () => {},
+      expose: (info) => (exposed = info),
     });
     limit = mounted.limit;
     cleanup = mounted.cleanup;
@@ -606,7 +651,7 @@ async function feedback(holder: HTMLElement, r: RoundResult) {
     shake(holder);
     floatText(holder, r.reason || "Nope!", "fail");
   }
-  await sleep(r.ok ? 520 : 900);
+  await sleep(r.ok ? 520 : r.solution ? 1400 : 900);
 }
 
 async function startRun(mode: Mode, opts: RunOpts = {}) {
@@ -851,9 +896,10 @@ function segHtml(active: string): string {
   const seg = [
     ["welt", "Trophäen (Welt)"],
     ["minigames", "Minigames"],
+    ["clans", "Clans"],
     ["crew", "Crew (Daily)"],
   ];
-  return `<nav class="seg" aria-label="Rangliste wählen">${seg
+  return `<nav class="seg seg-4" aria-label="Rangliste wählen">${seg
     .map(([id, label]) => `<a href="#/ranglisten/${id}" class="${id === active ? "on" : ""}"${id === active ? ` aria-current="page"` : ""}>${label}</a>`)
     .join("")}</nav>`;
 }
@@ -867,8 +913,24 @@ function openPlayer(name: string) {
 }
 
 async function boardsScreen(sub = "welt", gameId?: string) {
-  if (!["welt", "minigames", "crew"].includes(sub)) sub = "welt";
+  if (!["welt", "minigames", "clans", "crew"].includes(sub)) sub = "welt";
   const t = today();
+
+  if (sub === "clans") {
+    const per = gameId && CLAN_PERIODS.some(([k]) => k === gameId) ? gameId : "week";
+    const page = shell(
+      "ranglisten",
+      "Ranglisten",
+      `${segHtml(sub)}
+      <div class="chips" role="tablist" aria-label="Zeitraum">${CLAN_PERIODS.map(
+        ([k, l]) => `<a href="#/ranglisten/clans/${k}" class="chip ${k === per ? "on" : ""}" role="tab" aria-selected="${k === per}">${l}</a>`,
+      ).join("")}</div>
+      <div id="list"></div>
+      <a class="btn ghost" href="#/clan">🛡️ Mein Clan</a>`,
+    );
+    void renderClanBoard(page.querySelector<HTMLElement>("#list")!, per, { go: (path) => navigate(path) });
+    return;
+  }
 
   if (sub === "crew") {
     const page = shell(
@@ -915,18 +977,11 @@ async function boardsScreen(sub = "welt", gameId?: string) {
           `<a href="#/ranglisten/minigames/${x.id}" class="chip ${x.id === id ? "on" : ""}" role="tab" aria-selected="${x.id === id}"><span aria-hidden="true">${x.emoji}</span>${esc(x.title)}</a>`,
       ).join("")}</div>
       <div class="board-head"><h2 class="sec-title">${g.emoji} ${esc(g.title)}</h2><a class="link-btn" href="#/minigames/${id}">Spielen ›</a></div>
+      <div id="mg-scope">${rankScopeHtml(mgScope)}</div>
       <div id="list"><div class="empty">Lädt…</div></div>`,
     );
     page.querySelector(".chip.on")?.scrollIntoView({ block: "nearest", inline: "center" });
-    const list = page.querySelector<HTMLElement>("#list")!;
-    try {
-      const b = await getMinigameBoard(id, 50);
-      if (!list.isConnected) return;
-      list.innerHTML = minigameBoardHtml(b);
-      list.querySelectorAll<HTMLElement>("[data-player]").forEach((el) => el.addEventListener("click", () => openPlayer(el.dataset.player!)));
-    } catch (e) {
-      if (list.isConnected) list.innerHTML = `<div class="inline-error" role="alert">${esc(errMsg(e))}</div>`;
-    }
+    mountRanking(page.querySelector<HTMLElement>("#mg-scope")!, page.querySelector<HTMLElement>("#list")!, id);
     return;
   }
 
@@ -943,6 +998,19 @@ async function boardsScreen(sub = "welt", gameId?: string) {
 }
 
 // ---------- Freunde ----------
+
+function clanScreen(sub?: string, arg?: string) {
+  const page = shell("clan", "Clan", "", { back: sub === "c" ? "ranglisten/clans" : undefined });
+  void renderClan(page, sub, arg, {
+    hasName: () => Boolean(myProfile?.username),
+    askName: (then) => askName(then),
+    openPlayer: (n) => openPlayer(n),
+    rerender: () => renderRoute(),
+    go: (path) => navigate(path),
+    every: (ms, fn) => timers.push(window.setInterval(fn, ms)),
+    refreshBadges: () => void refreshBadges(true),
+  });
+}
 
 function friendsScreen() {
   const page = shell("freunde", "Freunde", "");
@@ -1005,6 +1073,33 @@ function profileScreen() {
 
 const GAMES_ORDER = Object.values(GAME_BY_ID);
 
+/** Zuletzt gewählte Minigame-Rangliste (Welt / Freunde / Clan) */
+let mgScope: RankScope = "world";
+
+/** Minigame-Rangliste mit Umschalter Welt / Freunde / Clan */
+function mountRanking(scopeEl: HTMLElement, listEl: HTMLElement, id: string) {
+  const load = async () => {
+    scopeEl.innerHTML = rankScopeHtml(mgScope);
+    listEl.innerHTML = `<div class="empty">Lädt…</div>`;
+    const want = mgScope;
+    try {
+      const r = await getMinigameRanking(id, want, 50);
+      if (!listEl.isConnected || want !== mgScope) return;
+      listEl.innerHTML = minigameRankingHtml(r);
+      listEl.querySelectorAll<HTMLElement>("[data-player]").forEach((el) => el.addEventListener("click", () => openPlayer(el.dataset.player!)));
+    } catch (e) {
+      if (listEl.isConnected) listEl.innerHTML = `<div class="inline-error" role="alert">${esc(errMsg(e))}</div>`;
+    }
+  };
+  scopeEl.addEventListener("click", (e) => {
+    const b = (e.target as HTMLElement).closest<HTMLElement>("[data-scope]");
+    if (!b || b.dataset.scope === mgScope) return;
+    mgScope = b.dataset.scope as RankScope;
+    void load();
+  });
+  void load();
+}
+
 function minigamesScreen() {
   const page = shell("spielen", "Minigames", `<p class="page-intro muted">Such dir ein Spiel aus. Jede Stufe wird schwerer – ein Fehler und der Lauf ist vorbei.</p><div id="mg-grid">${minigameGridHtml(mgBests)}</div>`, { back: "spielen" });
   void loadMgBests().then((b) => {
@@ -1016,18 +1111,7 @@ function minigamesScreen() {
 function minigameDetailScreen(id: string) {
   const g = GAME_BY_ID[id];
   const page = shell("spielen", g.title, minigameDetailHtml(g, mgBests?.get(id)), { back: "minigames" });
-  const fill = async () => {
-    const boardEl = page.querySelector<HTMLElement>("#mg-board")!;
-    try {
-      const b = await getMinigameBoard(id, 50);
-      if (!boardEl.isConnected) return;
-      boardEl.innerHTML = minigameBoardHtml(b);
-      boardEl.querySelectorAll<HTMLElement>("[data-player]").forEach((el) => el.addEventListener("click", () => openPlayer(el.dataset.player!)));
-    } catch (e) {
-      if (boardEl.isConnected) boardEl.innerHTML = `<div class="inline-error" role="alert">${esc(errMsg(e))}</div>`;
-    }
-  };
-  void fill();
+  mountRanking(page.querySelector<HTMLElement>("#mg-scope")!, page.querySelector<HTMLElement>("#mg-board")!, id);
   void loadMgBests().then((b) => {
     const best = b?.get(id);
     const stats = page.querySelector(".mg-stats");
@@ -1036,8 +1120,8 @@ function minigameDetailScreen(id: string) {
 }
 
 /** Ergebnis eines Laufs, das noch an den Server muss (für „Nochmal senden“) */
-let mgPending: { runId: string; game: string; stage: number; totalMs: number; steps: { ok: boolean; ms: number }[]; view: MgResultView } | null = null;
-let mgLast: { game: string; stage: number } | null = null;
+let mgPending: { runId: string; game: string; stage: number; totalMs: number; steps: { ok: boolean; ms: number; t: number }[]; view: MgResultView } | null = null;
+let mgLast: { game: string; stage: number; score: number } | null = null;
 
 async function startMinigame(id: string) {
   const g = GAME_BY_ID[id];
@@ -1047,20 +1131,21 @@ async function startMinigame(id: string) {
   aborted = false;
   navAbort = false;
   running = true;
-  const prevBest = mgBests?.get(id)?.best_stage ?? 0;
+  const prevBest = bestScore(mgBests?.get(id));
   app.innerHTML = minigameRunHtml(g, prevBest);
   const holder = document.getElementById("holder")!;
 
   // Lauf beim Server anmelden (liefert den Seed). Ohne Netz wird trotzdem gespielt, aber nicht gewertet.
   const runP = startMinigameRun(id).catch((e: unknown) => e);
-  await startCard(holder, g, () => aborted, () => sfx.tick());
+  await explainGame(holder, g, prevBest ? `Minigame · Highscore: ${fmtScore(prevBest)}` : "Minigame · Stufe 1");
   const run = await runP;
   const runId = run && typeof run === "object" && "run_id" in run ? (run as { run_id: string; seed: number }) : null;
   const seed = runId?.seed ?? (Math.random() * 2 ** 31) >>> 0;
 
-  const steps: { ok: boolean; ms: number }[] = [];
+  const steps: { ok: boolean; ms: number; t: number }[] = [];
   let stage = 0;
   let totalMs = 0;
+  let score = 0;
   let recordShown = false;
   for (let n = 1; !aborted; n++) {
     document.getElementById("mg-stage")!.textContent = String(n);
@@ -1068,38 +1153,45 @@ async function startMinigame(id: string) {
     const r = await playRound(holder, spec);
     if (aborted) break;
     const ms = Math.max(0, Math.round(r.elapsed));
+    // Tempo-Wert für den Bonus: was das Spiel selbst misst (z. B. Abweichung beim Stapelturm), sonst die Antwortzeit
+    const t = Math.max(0, Math.round(r.ms ?? r.elapsed));
     if (!r.ok) {
-      steps.push({ ok: false, ms });
+      steps.push({ ok: false, ms, t });
       sfx.bad();
       shake(holder);
       (holder.firstElementChild as HTMLElement | null)?.classList.add("done-fail");
       floatText(holder, r.reason || "Vorbei!", "fail");
-      await sleep(1000);
+      await sleep(r.solution ? 1400 : 1000);
       break;
     }
-    steps.push({ ok: true, ms });
+    steps.push({ ok: true, ms, t });
     totalMs += ms;
     stage = n;
+    const pts = stagePoints(n, t, g.speed);
+    score += pts;
+    const scoreEl = document.getElementById("mg-score");
+    if (scoreEl) scoreEl.textContent = fmtScore(score);
     (holder.firstElementChild as HTMLElement | null)?.classList.add("done-ok");
     sfx.good(90);
-    const record = stage > prevBest && !recordShown && prevBest > 0;
+    const record = score > prevBest && !recordShown && prevBest > 0;
     if (record) {
       recordShown = true;
       document.getElementById("mg-best")?.classList.add("beaten");
     }
-    if (stage > prevBest) {
+    if (score > prevBest) {
       const b = document.getElementById("mg-best");
-      if (b) b.innerHTML = `Rekord<b>${stage}</b>`;
+      if (b) b.innerHTML = `Highscore<b>${fmtScore(score)}</b>`;
     }
-    await stageClear(holder, n, record);
+    const bonus = t <= g.speed.veryFast ? "⚡ +50 %" : t <= g.speed.fast ? "+25 %" : "";
+    await stageClear(holder, n, pts, record, bonus);
   }
   running = false;
   const leftByNav = navAbort;
   navAbort = false;
   aborted = false;
-  mgLast = { game: id, stage };
+  mgLast = { game: id, stage, score };
 
-  const view: MgResultView = { game: g, stage, totalMs, record: stage > prevBest, prevBest, rank: null, totalPlayers: null, saving: Boolean(runId) };
+  const view: MgResultView = { game: g, stage, totalMs, score, record: score > prevBest, prevBest, rank: null, totalPlayers: null, saving: Boolean(runId) };
   if (!runId) {
     view.error = "Keine Verbindung beim Start – dieser Lauf zählt nicht für die Rangliste.";
     view.saving = false;
@@ -1126,10 +1218,26 @@ async function submitMinigame(show = true) {
   try {
     const res = await finishMinigameRun(p.runId, p.stage, p.totalMs, p.steps);
     mgPending = null;
-    const best: MinigameBest = { game: p.game, best_stage: res.best_stage, best_ms: res.best_ms, plays: res.plays, rank: res.rank };
+    const best: MinigameBest = {
+      game: p.game,
+      best_score: res.best_score ?? scoreFromStage(res.best_stage),
+      best_stage: res.best_stage,
+      best_ms: res.best_ms,
+      plays: res.plays,
+      rank: res.rank,
+    };
     (mgBests ??= new Map()).set(p.game, best);
     if (show && app.querySelector(".mg-result")) {
-      showMinigameResult({ ...p.view, record: res.is_record, rank: res.rank, totalPlayers: res.total_players, saving: false, error: undefined });
+      showMinigameResult({
+        ...p.view,
+        score: res.score ?? p.view.score,
+        record: res.is_record,
+        rank: res.rank,
+        totalPlayers: res.total_players,
+        clanXp: res.clan_xp || undefined,
+        saving: false,
+        error: undefined,
+      });
     }
   } catch (e) {
     const fatal = e instanceof SocialError && e.code !== "network";
@@ -1181,7 +1289,7 @@ app.addEventListener("click", async (e) => {
       } catch {
         /* Basis-Adresse benutzen */
       }
-      await doShare(minigameShareText(g, mgLast?.game === g.id ? mgLast.stage : 0, link));
+      await doShare(minigameShareText(g, mgLast?.game === g.id ? mgLast.stage : 0, mgLast?.game === g.id ? mgLast.score : 0, link));
       return;
     }
     case "duel":
@@ -1552,6 +1660,7 @@ function showStart() {
       renderRoute();
       void loadProfile();
       openPendingProfile();
+      startBadges();
       toast(fresh ? "Account erstellt – viel Spaß! 🎉" : "Angemeldet ✌️");
     },
   });
@@ -1563,6 +1672,7 @@ onAuthChange((s) => {
     setCachedProfile(undefined, null);
     setCachedAvatar(undefined, null);
     mgBests = null;
+    stopBadges();
     // Nach dem Abmelden startet die nächste Anmeldung wieder auf „Start“
     if (location.hash) replaceRoute("start");
     showStart();
@@ -1576,7 +1686,22 @@ async function boot() {
     renderRoute();
     void loadProfile();
     openPendingProfile();
+    startBadges();
   } else showStart();
 }
+
+// Clan-Abzeichen in Profilen nachladen (Profil-Popups, Profil-Tab)
+new MutationObserver(() => {
+  document.querySelectorAll<HTMLElement>("[data-clan-for]:not([data-done])").forEach((el) => {
+    el.dataset.done = "1";
+    void getPlayerClan(el.dataset.clanFor!)
+      .then((c) => {
+        if (!c || !el.isConnected) return;
+        el.innerHTML = `<a class="pf-clan-link" href="#/clan/c/${c.id}">${emblemHtml(c, "s")}<span>${esc(c.name)}<small>${c.role === "leader" ? "👑 Leitung · " : ""}Clan-Level ${c.level}</small></span></a>`;
+        el.querySelector("a")?.addEventListener("click", () => document.querySelectorAll(".modal-bg").forEach((m) => m.remove()));
+      })
+      .catch(() => {});
+  });
+}).observe(document.body, { childList: true, subtree: true });
 
 void boot();

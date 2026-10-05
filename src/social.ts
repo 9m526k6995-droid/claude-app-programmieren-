@@ -77,6 +77,7 @@ export interface MinigameEntry {
   rank: number;
   username: string;
   league: string;
+  score: number;
   stage: number;
   ms: number;
   is_me?: boolean;
@@ -92,6 +93,7 @@ export interface MinigameBoard {
 
 export interface MinigameBest {
   game: string;
+  best_score: number;
   best_stage: number;
   best_ms: number;
   plays: number;
@@ -101,6 +103,10 @@ export interface MinigameBest {
 export interface MinigameFinish {
   stage: number;
   total_ms: number;
+  score: number;
+  best_score: number;
+  prev_best_score: number;
+  clan_xp: number;
   best_stage: number;
   best_ms: number;
   plays: number;
@@ -138,6 +144,27 @@ const MESSAGES: Record<string, string> = {
   invalid_time: "Ungültige Zeit – wurde nicht gewertet.",
   invalid_steps: "Ungültiges Ergebnis – wurde nicht gewertet.",
   avatar_invalid: "Das Bild konnte nicht gespeichert werden. Probier ein anderes Foto.",
+  invalid_scope: "Diese Rangliste gibt es nicht.",
+  already_in_clan: "Du bist schon in einem Clan. Verlass ihn zuerst.",
+  clan_name_invalid: "Der Clan-Name darf 3–20 Zeichen haben: Buchstaben, Zahlen, Leerzeichen, _ und -.",
+  clan_name_bad: "Dieser Clan-Name ist nicht erlaubt.",
+  clan_name_taken: "Diesen Clan-Namen gibt es schon. Probier einen anderen.",
+  clan_not_found: "Diesen Clan gibt es nicht mehr.",
+  clan_full: "Der Clan ist voll (500 Mitglieder).",
+  invite_only: "Diesem Clan kann man nur mit Einladung beitreten.",
+  too_many_requests: "Du hast schon 5 offene Anfragen. Warte auf eine Antwort.",
+  too_many_invites: "Heute hast du schon genug Einladungen verschickt.",
+  not_in_clan: "Du bist in keinem Clan.",
+  not_leader: "Das darf nur der Clan-Leiter.",
+  player_in_clan: "Dieser Spieler ist schon in einem Clan.",
+  invite_not_found: "Diese Einladung gibt es nicht mehr.",
+  locked: "Das ist erst mit einem höheren Clan-Level freigeschaltet.",
+  invalid_mode: "Ungültige Einstellung.",
+  invalid_period: "Diesen Zeitraum gibt es nicht.",
+  muted: "Du bist im Clan-Chat gerade stummgeschaltet.",
+  slow_down: "Nicht so schnell – warte kurz.",
+  invalid_message: "Die Nachricht darf 1–200 Zeichen haben.",
+  message_not_found: "Diese Nachricht gibt es nicht mehr.",
   setup_missing: "Die Datenbank ist noch nicht auf dem neuesten Stand.",
   network: "Keine Verbindung zum Server. Prüfe dein Internet.",
   unknown: "Da ist etwas schiefgelaufen. Bitte versuch es nochmal.",
@@ -187,8 +214,26 @@ export const respondFriendRequest = (name: string, accept: boolean) =>
   call<{ status: string }>("respond_friend_request", { p_username: name, p_accept: accept });
 export const removeFriend = (name: string) => call<{ removed: boolean }>("remove_friend", { p_username: name });
 export const getFriends = () => call<FriendsData>("get_friends");
+export interface Badges {
+  friends: number;
+  friend_requests: number;
+  friends_accepted: number;
+  accepted_names: string[];
+  clan?: number;
+}
+export const getBadges = () => call<Badges>("get_badges");
+export const markFriendsSeen = () => call<null>("mark_friends_seen");
 export const startMinigameRun = (game: string) => call<{ run_id: string; seed: number }>("start_minigame_run", { p_game: game });
-export const finishMinigameRun = (run: string, stage: number, totalMs: number, steps: { ok: boolean; ms: number }[]) =>
+export interface MinigameRanking {
+  scope: "world" | "friends" | "clan";
+  rows: (MinigameEntry & { world_rank: number })[];
+  my_rank: number | null;
+  has_clan: boolean;
+  total: number;
+}
+export const getMinigameRanking = (game: string, scope: "world" | "friends" | "clan", limit = 50) =>
+  call<MinigameRanking>("get_minigame_ranking", { p_game: game, p_scope: scope, p_limit: limit });
+export const finishMinigameRun = (run: string, stage: number, totalMs: number, steps: { ok: boolean; ms: number; t?: number }[]) =>
   call<MinigameFinish>("finish_minigame_run", { p_run: run, p_stage: stage, p_total_ms: totalMs, p_steps: steps });
 export const getMinigameBoard = (game: string, limit = 50) => call<MinigameBoard>("get_minigame_board", { p_game: game, p_limit: limit });
 export const getMyMinigameBests = () => call<MinigameBest[]>("get_my_minigame_bests");
@@ -264,3 +309,129 @@ const avatarListeners: ((a: string | null) => void)[] = [];
 export function onAvatarChange(fn: (a: string | null) => void) {
   avatarListeners.push(fn);
 }
+
+// ---------- Clans ----------
+
+export type JoinMode = "open" | "request" | "invite";
+
+export interface ClanInfo {
+  id: string;
+  name: string;
+  emblem: string;
+  color: string;
+  frame: string;
+  description: string;
+  join_mode: JoinMode;
+  xp: number;
+  level: number;
+  level_xp: number;
+  next_level_xp: number | null;
+  members: number;
+  max_members: number;
+  leader: string | null;
+  rank: number;
+  invited_by?: string;
+  requested?: boolean;
+  invited?: boolean;
+}
+
+export interface ClanMember {
+  username: string;
+  league: string;
+  trophies: number;
+  role: "leader" | "member";
+  joined_at: string;
+  xp_total: number;
+  xp_week: number;
+  is_me: boolean;
+  muted: boolean;
+}
+
+export interface ClanChallenge {
+  key: string;
+  title: string;
+  metric: "points" | "rounds" | "active";
+  goal: number;
+  progress: number;
+  reward: number;
+  done: boolean;
+}
+
+export interface MyClan {
+  clan: ClanInfo | null;
+  invites?: ClanInfo[];
+  my_requests?: string[];
+  role?: "leader" | "member";
+  muted_until?: string | null;
+  my_xp_total?: number;
+  my_xp_week?: number;
+  members?: ClanMember[];
+  requests?: { username: string; league: string; trophies: number }[];
+  invited?: string[];
+  challenges?: { week_start: string; week_end: string; items: ClanChallenge[] };
+  unread?: number;
+}
+
+export interface ClanPublic extends ClanInfo {
+  is_member: boolean;
+  member_list: { username: string; league: string; role: string; xp_week: number }[];
+}
+
+export interface ClanBoardRow {
+  rank: number;
+  id: string;
+  name: string;
+  emblem: string;
+  color: string;
+  frame: string;
+  members: number;
+  level: number;
+  points: number;
+  is_mine: boolean;
+}
+
+export interface ClanMessage {
+  id: number;
+  username: string | null;
+  body: string | null;
+  hidden: boolean;
+  kind: "text" | "quick" | "system";
+  at: string;
+  is_me: boolean;
+}
+
+export interface ClanContrib {
+  rank: number;
+  username: string;
+  league: string;
+  role: string;
+  points: number;
+  rounds: number;
+  is_me: boolean;
+}
+
+export const getMyClan = () => call<MyClan>("get_my_clan");
+export const createClan = (name: string, emblem: string, color: string, description: string, joinMode: JoinMode) =>
+  call<MyClan>("create_clan", { p_name: name, p_emblem: emblem, p_color: color, p_description: description, p_join_mode: joinMode });
+export const updateClan = (emblem: string, color: string, frame: string, description: string, joinMode: JoinMode) =>
+  call<MyClan>("update_clan", { p_emblem: emblem, p_color: color, p_frame: frame, p_description: description, p_join_mode: joinMode });
+export const searchClans = (q: string) => call<ClanInfo[]>("search_clans", { p_query: q });
+export const getClan = (id: string) => call<ClanPublic>("get_clan", { p_clan: id });
+export const joinClan = (id: string) => call<{ status: "joined" | "requested" }>("join_clan", { p_clan: id });
+export const cancelClanRequest = (id: string) => call<null>("cancel_clan_request", { p_clan: id });
+export const inviteToClan = (name: string) => call<{ status: "invited" | "joined" }>("invite_to_clan", { p_username: name });
+export const respondClanInvite = (id: string, accept: boolean) => call<{ status: string }>("respond_clan_invite", { p_clan: id, p_accept: accept });
+export const respondClanRequest = (name: string, accept: boolean) => call<MyClan>("respond_clan_request", { p_username: name, p_accept: accept });
+export const leaveClan = () => call<null>("leave_clan");
+export const kickClanMember = (name: string) => call<MyClan>("kick_clan_member", { p_username: name });
+export const transferClanLeader = (name: string) => call<MyClan>("transfer_clan_leader", { p_username: name });
+export const getClanBoard = (period: string) => call<{ period: string; rows: ClanBoardRow[]; total: number }>("get_clan_board", { p_period: period });
+export const getClanContrib = (period: string) => call<ClanContrib[]>("get_clan_contrib", { p_period: period });
+export const getClanMessages = (after = 0) => call<ClanMessage[]>("get_clan_messages", { p_after: after });
+export const sendClanMessage = (body: string | null, quick: number | null = null) =>
+  call<ClanMessage[]>("send_clan_message", { p_body: body, p_quick: quick });
+export const reportClanMessage = (id: number, reason = "") => call<{ hidden: boolean; reports: number }>("report_clan_message", { p_id: id, p_reason: reason });
+export const hideClanMessage = (id: number) => call<null>("hide_clan_message", { p_id: id });
+export const muteClanMember = (name: string, hours: number) => call<MyClan>("mute_clan_member", { p_username: name, p_hours: hours });
+export const getPlayerClan = (name: string) =>
+  call<{ id: string; name: string; emblem: string; color: string; frame: string; level: number; role: string } | null>("get_player_clan", { p_username: name });

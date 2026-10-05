@@ -2869,8 +2869,8 @@ input:focus {
   transform: translateX(-50%);
   width: min(520px, 100%);
   display: grid;
-  grid-template-columns: repeat(5, minmax(0, 1fr));
-  padding: 6px 6px max(8px, env(safe-area-inset-bottom));
+  grid-template-columns: repeat(6, minmax(0, 1fr));
+  padding: 6px 4px max(8px, env(safe-area-inset-bottom));
   background: rgba(22, 16, 31, 0.94);
   -webkit-backdrop-filter: blur(14px);
   backdrop-filter: blur(14px);
@@ -4341,4 +4341,743 @@ html {
 .amp-pad.miss {
   background: var(--red);
   color: #fff;
+}
+
+/* OK-Knopf auf der Erklärkarte */
+.explain-ok {
+  margin-top: 12px;
+  min-width: min(260px, 80%);
+  height: 62px;
+  padding: 0 26px;
+  border-radius: 20px;
+  background: var(--paper);
+  color: var(--ink);
+  font-size: 22px;
+  font-weight: 900;
+  box-shadow: 0 6px 0 rgba(0, 0, 0, 0.3);
+  animation: ok-pulse 1.4s ease-in-out infinite;
+}
+.explain-ok:active,
+.explain-ok.go {
+  transform: translateY(4px);
+  box-shadow: 0 2px 0 rgba(0, 0, 0, 0.3);
+  background: var(--lime);
+  animation: none;
+}
+@keyframes ok-pulse {
+  50% {
+    transform: scale(1.04);
+  }
+}
+.explain-count.hidden {
+  visibility: hidden;
+}
+.intro.explain .explain-count {
+  margin-top: 4px;
+}
+
+/* Richtige Lösung bei Fehler oder Zeitablauf – in jedem Spiel gleich */
+.stage .solution {
+  outline: 5px solid #fff !important;
+  outline-offset: 2px;
+  box-shadow: 0 0 0 9px rgba(198, 255, 61, 0.85), 0 0 28px 8px rgba(255, 255, 255, 0.7) !important;
+  z-index: 3;
+  animation: solution-blink 0.45s ease-in-out 4 alternate !important;
+}
+@keyframes solution-blink {
+  to {
+    filter: brightness(1.35);
+  }
+}
+.stage .cup.solution .cup-body {
+  transform: translateX(-50%) translateY(-64px);
+}
+.stage .cup.solution {
+  box-shadow: none !important;
+  outline: none !important;
+}
+.stage .cup.solution .cup-ball {
+  filter: drop-shadow(0 0 10px #fff);
+}
+.stage .blk-piece.solution,
+.stage .odd-tile.solution {
+  outline-offset: 0;
+}
+/* Bewegliche Blasen (ab Stufe 6): Plopp-Animation muss die Schwebe-Animation überschreiben */
+.bubble.drift.popped,
+.bubble.popped {
+  animation: popped 0.22s forwards;
+  /* Die Einblend-Verzögerung steht inline am Element – beim Platzen sofort reagieren */
+  animation-delay: 0s !important;
+  pointer-events: none;
+}
+
+/* Hau den Maulwurf: Hammer */
+.mole-grid {
+  position: relative;
+}
+.mole-hammer {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  z-index: 5;
+  font-size: clamp(46px, 14vw, 66px);
+  line-height: 1;
+  pointer-events: none;
+  transform-origin: 85% 85%;
+  transform: translate(-50%, -60%) rotate(-35deg);
+  filter: drop-shadow(0 6px 0 rgba(0, 0, 0, 0.35));
+  opacity: 0;
+  transition:
+    left 0.06s ease-out,
+    top 0.06s ease-out;
+}
+.mole-hammer.swing {
+  animation: hammer-swing 0.26s ease-out forwards;
+}
+@keyframes hammer-swing {
+  0% {
+    opacity: 1;
+    transform: translate(-50%, -60%) rotate(-55deg);
+  }
+  45% {
+    opacity: 1;
+    transform: translate(-50%, -40%) rotate(25deg) scale(1.05);
+  }
+  100% {
+    opacity: 0.85;
+    transform: translate(-50%, -55%) rotate(-25deg);
+  }
+}
+.mole-star {
+  position: absolute;
+  z-index: 4;
+  font-size: 40px;
+  pointer-events: none;
+  transform: translate(-50%, -50%) scale(0.4);
+  animation: mole-star 0.38s ease-out forwards;
+}
+@keyframes mole-star {
+  40% {
+    transform: translate(-50%, -50%) scale(1.15);
+    opacity: 1;
+  }
+  to {
+    transform: translate(-50%, -50%) scale(1.4);
+    opacity: 0;
+  }
+}
+
+/* Rote Zahl an einem Tab (neue Freundesanfrage usw.) */
+.tabbar .tab {
+  position: relative;
+}
+.tab-badge {
+  position: absolute;
+  top: 2px;
+  left: calc(50% + 6px);
+  min-width: 19px;
+  height: 19px;
+  padding: 0 5px;
+  border-radius: 999px;
+  background: var(--red);
+  color: #fff;
+  font: 800 11px/19px var(--font);
+  text-align: center;
+  box-shadow: 0 0 0 2px var(--ink);
+  animation: badge-pop 0.35s cubic-bezier(0.2, 1.6, 0.4, 1);
+}
+@keyframes badge-pop {
+  from {
+    transform: scale(0);
+  }
+}
+
+/* ===================== Tab-Leiste mit 6 Tabs ===================== */
+.tab-label {
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+@media (max-width: 380px) {
+  .tab {
+    font-size: 10px;
+  }
+  .tab-ico {
+    font-size: 20px;
+  }
+}
+
+/* Segment-Umschalter mit 4 Einträgen / als Buttons */
+.seg.seg-4 {
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+}
+.seg .seg-btn {
+  display: grid;
+  place-items: center;
+  min-height: 40px;
+  padding: 4px 6px;
+  border-radius: 12px;
+  color: var(--muted);
+  font-weight: 800;
+  font-size: 13px;
+}
+.seg .seg-btn.on {
+  color: #fff;
+  background: linear-gradient(135deg, var(--violet), var(--pink));
+}
+.seg-badge {
+  display: inline-block;
+  min-width: 18px;
+  padding: 0 5px;
+  border-radius: 999px;
+  background: var(--red);
+  color: #fff;
+  font-size: 11px;
+  line-height: 18px;
+}
+#mg-scope {
+  margin-bottom: 10px;
+}
+.score-cell {
+  display: grid;
+  justify-items: end;
+  line-height: 1.05;
+  font-variant-numeric: tabular-nums;
+}
+.score-cell small {
+  font-size: 10px;
+  font-weight: 700;
+  color: var(--muted);
+}
+
+/* Minigame-Lauf: Punkte */
+.mg-clear em {
+  display: block;
+  font-style: normal;
+  font-weight: 900;
+  font-size: 26px;
+  color: var(--lime);
+  text-shadow: 0 3px 0 rgba(0, 0, 0, 0.35);
+}
+.mg-clear em small {
+  font-size: 15px;
+  color: var(--yellow);
+}
+.mg-res-clan {
+  display: block;
+  padding: 12px 14px;
+  border-radius: 16px;
+  background: rgba(164, 92, 255, 0.16);
+  box-shadow: inset 0 0 0 2px rgba(164, 92, 255, 0.45);
+  color: var(--paper);
+  text-align: center;
+  text-decoration: none;
+  font-weight: 700;
+}
+
+/* ===================== Clans ===================== */
+.btn.small {
+  width: auto;
+  min-height: 38px;
+  padding: 6px 12px;
+  font-size: 14px;
+  border-radius: 12px;
+}
+.btn.armed {
+  background: var(--red);
+  box-shadow: 0 4px 0 #8d1426;
+}
+.icon-btn.small {
+  width: 38px;
+  height: 38px;
+  font-size: 18px;
+}
+.pill {
+  display: inline-block;
+  padding: 4px 10px;
+  border-radius: 999px;
+  background: var(--ink-3);
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 800;
+  white-space: nowrap;
+}
+.row-actions {
+  display: flex;
+  gap: 6px;
+  align-items: center;
+  flex: none;
+}
+.clan-emblem {
+  --s: 40px;
+  flex: none;
+  display: grid;
+  place-items: center;
+  width: var(--s);
+  height: var(--s);
+  border-radius: 30%;
+  background: radial-gradient(circle at 30% 25%, rgba(255, 255, 255, 0.45), transparent 55%), var(--cc, var(--violet));
+  box-shadow: inset 0 -4px 0 rgba(0, 0, 0, 0.22);
+  font-size: calc(var(--s) * 0.55);
+  line-height: 1;
+}
+.clan-emblem.size-s {
+  --s: 34px;
+}
+.clan-emblem.size-l {
+  --s: 76px;
+}
+.clan-emblem.frame-silver {
+  outline: 3px solid #d7dde6;
+  outline-offset: 2px;
+}
+.clan-emblem.frame-gold {
+  outline: 3px solid #ffd23d;
+  outline-offset: 2px;
+  box-shadow: inset 0 -4px 0 rgba(0, 0, 0, 0.22), 0 0 14px rgba(255, 210, 61, 0.55);
+}
+.clan-emblem.frame-diamond {
+  outline: 3px solid #8ff3ff;
+  outline-offset: 2px;
+  box-shadow: inset 0 -4px 0 rgba(0, 0, 0, 0.22), 0 0 18px rgba(143, 243, 255, 0.7);
+}
+.clan-emblem.frame-legend {
+  outline: 3px solid #ff3d8b;
+  outline-offset: 2px;
+  box-shadow: inset 0 -4px 0 rgba(0, 0, 0, 0.22), 0 0 22px rgba(255, 61, 139, 0.8);
+  animation: legend-glow 2s ease-in-out infinite alternate;
+}
+@keyframes legend-glow {
+  to {
+    outline-color: #ffd23d;
+  }
+}
+.clan-head {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  gap: 6px 14px;
+  align-items: center;
+  padding: 16px;
+  border-radius: 24px;
+  background: linear-gradient(160deg, color-mix(in srgb, var(--cc) 30%, var(--ink-2)), var(--ink-2));
+  box-shadow: inset 0 0 0 2px color-mix(in srgb, var(--cc) 45%, transparent);
+}
+.clan-head-txt {
+  display: grid;
+  gap: 5px;
+  min-width: 0;
+}
+.clan-name {
+  margin: 0;
+  font-size: 24px;
+  line-height: 1.1;
+  overflow-wrap: anywhere;
+}
+.clan-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 10px;
+  font-size: 13px;
+  font-weight: 800;
+  color: var(--muted);
+}
+.clan-lvl {
+  color: var(--lime);
+}
+.clan-xp {
+  height: 10px;
+  border-radius: 999px;
+  background: rgba(0, 0, 0, 0.35);
+  overflow: hidden;
+}
+.clan-xp i {
+  display: block;
+  height: 100%;
+  border-radius: inherit;
+  background: linear-gradient(90deg, var(--lime), var(--yellow));
+}
+.clan-desc {
+  grid-column: 1 / -1;
+  margin: 4px 0 0;
+  overflow-wrap: anywhere;
+}
+.clan-tabs {
+  margin: 12px 0;
+}
+.clan-intro {
+  display: flex;
+  gap: 14px;
+  align-items: center;
+  padding: 16px;
+  border-radius: 22px;
+  background: linear-gradient(135deg, rgba(164, 92, 255, 0.22), rgba(255, 61, 139, 0.14));
+}
+.clan-intro h2 {
+  margin: 0 0 4px;
+  font-size: 20px;
+}
+.clan-intro p {
+  margin: 0;
+}
+.clan-intro-ico {
+  font-size: 44px;
+}
+.clan-row {
+  gap: 10px;
+}
+.clan-open {
+  display: flex;
+  gap: 10px;
+  align-items: center;
+  flex: 1;
+  min-width: 0;
+  text-align: left;
+}
+.clan-mine {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 10px;
+  padding: 14px;
+  border-radius: 20px;
+  background: var(--ink-2);
+  box-shadow: inset 0 0 0 2px var(--ink-3);
+}
+.clan-mine div {
+  display: grid;
+  gap: 2px;
+}
+.clan-mine span {
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--muted);
+}
+.clan-mine b {
+  font-size: 24px;
+  font-variant-numeric: tabular-nums;
+}
+.clan-mine .btn {
+  grid-column: 1 / -1;
+}
+.chal-list {
+  display: grid;
+  gap: 10px;
+}
+.chal {
+  display: grid;
+  gap: 6px;
+  padding: 12px 14px;
+  border-radius: 18px;
+  background: var(--ink-2);
+  box-shadow: inset 0 0 0 2px var(--ink-3);
+}
+.chal.done {
+  box-shadow: inset 0 0 0 2px var(--lime);
+}
+.chal-top {
+  display: flex;
+  justify-content: space-between;
+  gap: 10px;
+  align-items: baseline;
+}
+.chal-rew {
+  flex: none;
+  font-size: 13px;
+  font-weight: 800;
+  color: var(--yellow);
+}
+.chal-bar {
+  height: 10px;
+  border-radius: 999px;
+  background: rgba(0, 0, 0, 0.35);
+  overflow: hidden;
+}
+.chal-bar i {
+  display: block;
+  height: 100%;
+  border-radius: inherit;
+  background: linear-gradient(90deg, var(--violet), var(--pink));
+}
+.chal.done .chal-bar i {
+  background: var(--lime);
+}
+.reward-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: 8px;
+}
+.reward-list li {
+  display: grid;
+  grid-template-columns: 78px minmax(0, 1fr);
+  gap: 8px;
+}
+.reward-list b {
+  color: var(--lime);
+}
+
+/* Formular */
+.clan-form {
+  display: grid;
+  gap: 14px;
+  margin-top: 14px;
+}
+.field {
+  display: grid;
+  gap: 6px;
+}
+.field-label {
+  font-size: 13px;
+  font-weight: 800;
+  color: var(--muted);
+}
+.clan-form textarea {
+  width: 100%;
+  padding: 12px 14px;
+  border-radius: 14px;
+  border: 0;
+  background: var(--ink);
+  box-shadow: inset 0 0 0 2px var(--ink-3);
+  color: var(--paper);
+  font: inherit;
+  resize: vertical;
+}
+.clan-preview {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  font-size: 20px;
+  overflow-wrap: anywhere;
+}
+.emblem-grid,
+.color-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(46px, 1fr));
+  gap: 8px;
+}
+.emblem-opt,
+.color-opt {
+  position: relative;
+  display: grid;
+  place-items: center;
+  aspect-ratio: 1;
+  border-radius: 14px;
+  background: var(--ink);
+  box-shadow: inset 0 0 0 2px var(--ink-3);
+  font-size: 24px;
+}
+.color-opt {
+  background: var(--cc);
+}
+.emblem-opt.on,
+.color-opt.on,
+.frame-opt.on {
+  box-shadow: inset 0 0 0 3px var(--lime), 0 0 0 2px var(--lime);
+}
+.emblem-opt:disabled,
+.color-opt:disabled,
+.frame-opt:disabled {
+  opacity: 0.38;
+  filter: grayscale(0.6);
+}
+.emblem-opt small,
+.color-opt small {
+  position: absolute;
+  bottom: 2px;
+  font-size: 9px;
+  font-weight: 900;
+  color: #fff;
+  text-shadow: 0 1px 2px #000;
+}
+.frame-grid {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+.frame-opt {
+  padding: 8px 12px;
+  border-radius: 12px;
+  background: var(--ink);
+  box-shadow: inset 0 0 0 2px var(--ink-3);
+  font-weight: 800;
+  font-size: 14px;
+}
+.mode-grid {
+  display: grid;
+  gap: 8px;
+}
+.mode-opt {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: 0 10px;
+  align-items: center;
+  padding: 10px 12px;
+  border-radius: 14px;
+  background: var(--ink);
+  box-shadow: inset 0 0 0 2px var(--ink-3);
+}
+.mode-opt input {
+  flex: none;
+  min-height: 0;
+  padding: 0;
+  box-shadow: none;
+  grid-row: span 2;
+  width: 20px;
+  height: 20px;
+  accent-color: var(--lime);
+}
+.mode-opt small {
+  color: var(--muted);
+}
+.mode-opt:has(input:checked) {
+  box-shadow: inset 0 0 0 2px var(--lime);
+}
+.inv-form,
+.chat-form {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 8px;
+}
+.inv-form .btn,
+.chat-form .btn {
+  width: auto;
+  min-height: 48px;
+}
+.row-item.member {
+  gap: 8px;
+}
+.nm-btn {
+  flex: 1;
+  min-width: 0;
+  text-align: left;
+}
+
+/* Chat */
+.chat {
+  display: grid;
+  gap: 10px;
+}
+.chat-rules {
+  margin: 0;
+  text-align: center;
+}
+.chat-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  height: min(52dvh, 460px);
+  overflow-y: auto;
+  padding: 10px;
+  border-radius: 20px;
+  background: var(--ink-2);
+  box-shadow: inset 0 0 0 2px var(--ink-3);
+  overscroll-behavior: contain;
+}
+.msg {
+  align-self: flex-start;
+  display: grid;
+  gap: 2px;
+  max-width: 82%;
+  padding: 8px 12px;
+  border-radius: 16px 16px 16px 4px;
+  background: var(--ink-3);
+  text-align: left;
+  overflow-wrap: anywhere;
+}
+.msg.me {
+  align-self: flex-end;
+  border-radius: 16px 16px 4px 16px;
+  background: linear-gradient(135deg, var(--violet), var(--pink));
+}
+.msg.quick .msg-body {
+  font-weight: 800;
+}
+.msg-name {
+  font-size: 12px;
+  color: var(--lime);
+}
+.msg-time {
+  font-size: 10px;
+  color: rgba(255, 248, 239, 0.6);
+  justify-self: end;
+}
+.msg.sys {
+  align-self: center;
+  max-width: 92%;
+  padding: 4px 10px;
+  border-radius: 999px;
+  background: transparent;
+  color: var(--muted);
+  font-size: 13px;
+  text-align: center;
+}
+.chat-quick {
+  display: flex;
+  gap: 8px;
+  overflow-x: auto;
+  margin: 0 -16px;
+  padding: 2px 16px 4px;
+  scrollbar-width: none;
+}
+.chat-quick::-webkit-scrollbar {
+  display: none;
+}
+.chat-quick .chip {
+  min-height: 36px;
+  font-size: 13px;
+}
+.msg-quote {
+  margin: 0;
+  padding: 12px;
+  border-radius: 14px;
+  background: var(--ink);
+  overflow-wrap: anywhere;
+}
+.modal-actions {
+  display: grid;
+  gap: 8px;
+}
+.modal-title {
+  margin: 0;
+  font-size: 22px;
+}
+
+/* Clan im Profil */
+.pf-clan:empty {
+  display: none;
+}
+.pf-clan-link {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  padding: 6px 12px 6px 6px;
+  border-radius: 16px;
+  background: var(--ink);
+  box-shadow: inset 0 0 0 2px var(--ink-3);
+  color: var(--paper);
+  text-decoration: none;
+  font-weight: 800;
+  text-align: left;
+}
+.pf-clan-link small {
+  display: block;
+  font-size: 11px;
+  color: var(--muted);
+}
+.clan-row .nm,
+.member .nm,
+#inv-friends .nm {
+  display: grid;
+  min-width: 0;
+}
+.clan-row .nm small,
+.member .nm small {
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--lc, var(--muted));
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }

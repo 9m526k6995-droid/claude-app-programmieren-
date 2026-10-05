@@ -46,26 +46,36 @@ Vor **jeder Aufgabe** zeigt eine Erklärkarte 4 Sekunden lang, was zu tun ist (E
 
 ### Aufbau der App
 
-Unten sitzt eine Leiste mit fünf Bereichen. Jeder Bildschirm hat eine eigene Adresse (`#/…`), dadurch funktioniert der Zurück-Knopf am Handy und nach dem Neuladen bleibt man, wo man war.
+Unten sitzt eine Leiste mit sechs Bereichen. Jeder Bildschirm hat eine eigene Adresse (`#/…`), dadurch funktioniert der Zurück-Knopf am Handy und nach dem Neuladen bleibt man, wo man war.
 
 | Tab | Inhalt |
 |---|---|
 | 🏠 Start (`#/start`) | Daily spielen bzw. Ergebnis mit Teilen/Duell/Countdown, Duell-Einladung, Wochen-Streak |
 | 🎮 Spielen (`#/spielen`) | Alle Modi: Daily, Trophäen-Modus, **Minigames** (`#/minigames`), Training, Endlos |
-| 🏆 Ranglisten (`#/ranglisten/…`) | Trophäen (Welt), Minigames (pro Spiel), Crew (Daily) |
+| 🏆 Ranglisten (`#/ranglisten/…`) | Trophäen (Welt), Minigames (pro Spiel, Welt/Freunde/Clan), Clans (Tag/Woche/Monat/Saison/Gesamt), Crew (Daily) |
+| 🛡️ Clan (`#/clan`, `#/clan/chat`, `#/clan/mitglieder`, `#/clan/einstellungen`) | Clan gründen/suchen/beitreten, Übersicht mit Level, XP und Wochen-Challenges, Chat, Mitglieder, Einstellungen |
 | 👥 Freunde (`#/freunde`) | Spieler suchen, Anfragen, Freundesliste |
 | 👤 Profil (`#/profil`) | Profilbild, Werte, Profil-Link, Konto (Name, E-Mail, Passwort, Abmelden), Einstellungen |
 
 Oben rechts auf jeder Seite öffnet die **Flamme** den Trophäenpfad (`#/pfad`). Während einer Runde ist die Leiste ausgeblendet.
 
+**Rote Zahlen an der Leiste:** Am Freunde-Symbol bei neuen Freundesanfragen und angenommenen Anfragen, am Clan-Symbol bei Einladungen, Beitrittsanfragen (für den Leiter) und ungelesenen Chat-Nachrichten. Die App fragt alle 30 Sekunden und beim Zurückkehren in die App nach; beim Öffnen des Tabs verschwindet die Zahl.
+
+**Vor jedem Minispiel** kommt eine Erklärkarte (in allen Modi). Wer verstanden hat, tippt **„OK, los!“** und es geht sofort los – sonst startet die Aufgabe nach 4 Sekunden von selbst.
+
+**Bei Fehler oder Zeitablauf** wird die richtige Lösung markiert (z. B. das andere Feld bei „Finde den Anderen“, der Becher mit dem Ball, das Paar).
+
 ### Minigames – jedes Spiel einzeln
 
-Unter **Spielen → Minigames** gibt es alle 27 Spiele einzeln. Jedes hat eine Detailseite (Erklärung, „So wird's schwerer“, Bestleistung, Rang, Rangliste) und eine **eigene Rangliste**.
+Unter **Spielen → Minigames** gibt es alle 27 Spiele einzeln. Jedes hat eine Detailseite (Erklärung, „So wird's schwerer“, Highscore, Rang, Rangliste) und eine **eigene Rangliste** – umschaltbar zwischen **Welt, Freunde und Clan**.
 
 - Ein Lauf geht Stufe für Stufe. Jede Stufe wird schwerer. Ein Fehler oder Zeit um = Lauf vorbei.
-- Kein langes Erklären: nur eine kurze Startkarte „3 · 2 · 1“.
-- Gewertet wird die **geschaffte Stufe**, bei Gleichstand die kürzere Spielzeit, danach wer es früher geschafft hat.
-- Der Server vergibt den Zufalls-Seed und prüft, ob das Ergebnis realistisch ist (`supabase/minigames.sql`).
+- Vorher die Erklärkarte mit „OK, los!“.
+- **Punkte statt nur Stufen:** Jede geschaffte Stufe n bringt `100 + 25·(n−1)` Punkte, sehr schnell +50 %, schnell +25 %. Im Lauf siehst du die aktuellen Punkte und deinen Highscore, nach jeder Stufe „+175 ⚡ +50 %“.
+- Gewertet wird der **Highscore**, bei Gleichstand die höhere Stufe, dann die kürzere Spielzeit, dann wer es früher geschafft hat.
+- Alte Bestwerte (nur Stufen) wurden einmalig ohne Tempo-Bonus in Punkte umgerechnet – niemand verliert seinen Platz.
+- Der Server vergibt den Zufalls-Seed, rechnet die Punkte selbst nach und prüft, ob das Ergebnis realistisch ist (`supabase/minigames.sql`, `supabase/clans.sql`).
+- Jeder Punkt geht 1:1 als **XP an deinen Clan**.
 
 | Spiel | So wird's schwerer |
 |---|---|
@@ -143,6 +153,25 @@ Der Tab **Profil** zeigt das eigene Profil:
 - **Endlos** – so lange, bis der erste Fehler passiert.
 - **Duell** – per Link: Die andere Person spielt genau deine Runde, danach gibt es den Vergleich Challenge für Challenge.
 
+### Clans
+
+Unter dem Tab **🛡️ Clan** kann jeder einen eigenen Clan gründen oder einem beitreten.
+
+- **Gründen:** Name (3–20 Zeichen, Schimpfwörter sind gesperrt), Wappen (Emoji auf Farbe), Beschreibung und wer beitreten darf: *Offen*, *Auf Anfrage* oder *Nur Einladung*.
+- **Beitreten:** Clans suchen und direkt beitreten bzw. eine Beitrittsanfrage schicken (höchstens 5 offene). Der Leiter nimmt Anfragen an oder lehnt ab.
+- **Einladen:** Jedes Mitglied kann Spieler per Namen einladen – oder Freunde direkt aus der Freundesliste. Wer schon angefragt hat, ist mit der Einladung sofort drin.
+- Pro Spieler **genau ein Clan**, höchstens **500 Mitglieder** pro Clan. Rollen: 👑 Leiter und Mitglieder. Verlässt der Leiter den Clan, übernimmt automatisch das aktivste Mitglied; der letzte macht das Licht aus (Clan wird aufgelöst).
+- **XP & Level:** Jeder Punkt aus Minigames wird Clan-XP. Level L braucht `1000·(L−1)²` XP (Level 2 = 1.000, Level 5 = 16.000, Level 10 = 81.000 …, höchstens 50).
+- **Freischaltungen:** neue Wappen ab Level 3, 5, 8 und 12, neue Farben ab Level 2, 4 und 7, Rahmen Silber (5), Gold (10), Diamant (15) und Legende (20, animiert).
+- **Wochen-Challenges** (jeden Montag neu, mit Fortschrittsbalken und Bonus-XP): 25.000 / 100.000 / 500.000 Punkte, 50 / 500 Runden, 5 aktive Mitglieder.
+- **Ranglisten:** Clans nach XP von heute, dieser Woche, diesem Monat, der Saison (Quartal) oder gesamt; im Clan „Wer trägt am meisten bei?“ (Woche/Monat/gesamt).
+- **Chat:** freie Nachrichten (max. 200 Zeichen) und 7 Schnellnachrichten („GG! 🎉“, „Wer spielt mit? 🎮“ …).
+  - Schimpfwörter (auch mit Zahlen wie „F1CK“), Links, E-Mail-Adressen und Telefonnummern werden automatisch durch `***` ersetzt.
+  - Höchstens 1 Nachricht alle 2 Sekunden und 15 pro Minute.
+  - **Melden:** Ab 3 Meldungen – oder sofort, wenn der Leiter meldet – wird eine Nachricht ausgeblendet. Eigene Nachrichten löschen, als Leiter jede.
+  - **Stummschalten:** Der Leiter kann Mitglieder 1 Stunde bis 7 Tage im Chat stummschalten. Jeder kann einzelne Spieler für sich selbst ausblenden.
+- Im **Profil** jedes Spielers steht sein Clan (antippen öffnet die Clan-Seite).
+
 ### Social-Funktionen
 
 - **Teilen** als Emoji-Raster (perfekt für WhatsApp-Gruppen und Kommentare):
@@ -205,6 +234,10 @@ src/
   social.ts       Verbindung zu Trophäen, Weltrangliste und Freunden (Supabase-Funktionen)
   trophyUi.ts     Trophäenpfad, Liga-Aufstieg, Ergebnis, Weltrangliste, Spielerprofil
   friendsUi.ts    Freunde-Bereich
+  clanUi.ts       Clan-Bereich (gründen, suchen, Übersicht, Chat, Mitglieder, Einstellungen, Clan-Rangliste)
+  clanKit.ts      Clan-Freischaltungen, Schnellnachrichten, Level-Formel
+  score.ts        Punkte-Formel der Minigames (identisch mit dem Server)
+  badges.ts       Rote Zahlen an der Tab-Leiste
   ui.ts           Kleine UI-Helfer
   run.ts          Rundenaufbau, Punkte, Bewertung
   rng.ts          Seed-Zufall, Daily-Nummer
@@ -218,6 +251,8 @@ supabase/profiles.sql Benutzerprofile (Grundlage für Highscores, Fortschritt us
 supabase/trophies.sql Trophäen, Weltrangliste, Freunde (Funktionen + Sicherheitsregeln)
 supabase/profile.sql  Profilbild und öffentliches Profil (Profil-Links)
 supabase/minigames.sql Minigame-Läufe und Ranglisten pro Spiel
+supabase/social.sql   Badges (neue Freundesanfragen usw.)
+supabase/clans.sql    Highscores (Punkte) für Minigames + Clans (XP, Level, Ranglisten, Challenges, Chat mit Filter)
 src/games.ts / games2.ts / games3.ts  Die 27 Minispiele (games2 = dritte, games3 = vierte Welle), gameKit.ts = gemeinsame Bausteine
 supabase/schema.sql   Alte Tages-Punkteliste (wird nicht mehr genutzt)
 tests/                Logik-, Bestenlisten- und Browser-Tests

@@ -2,7 +2,7 @@
 // Gleiche Regeln wie in games.ts: `level` 0..1 für die gemischten Modi, `stage(n)` für die Minigame-Läufe.
 
 import type { MicroGame } from "./games";
-import { lerp, st, h, onPress, scatter } from "./gameKit";
+import { lerp, st, h, onPress, scatter, spread } from "./gameKit";
 import type { Rng } from "./rng";
 
 /** Rückgabe für Spiele mit eigener Vorlaufphase: misst die Antwortzeit ab dem Moment, ab dem getippt werden darf. */
@@ -134,6 +134,25 @@ const mole: MicroGame = {
       grid.append(hole);
       return btn;
     });
+    // Der Hammer: schlägt animiert auf das angetippte Loch
+    const hammer = h("div", "mole-hammer", "🔨");
+    grid.append(hammer);
+    const swing = (btn: HTMLElement, hit: boolean) => {
+      const hole = btn.parentElement!;
+      hammer.style.left = `${hole.offsetLeft + hole.offsetWidth * 0.62}px`;
+      hammer.style.top = `${hole.offsetTop + hole.offsetHeight * 0.1}px`;
+      hammer.classList.remove("swing", "hit");
+      void hammer.offsetWidth;
+      hammer.classList.add("swing");
+      if (hit) {
+        hammer.classList.add("hit");
+        const star = h("span", "mole-star", "💥");
+        star.style.left = `${hole.offsetLeft + hole.offsetWidth / 2}px`;
+        star.style.top = `${hole.offsetTop + hole.offsetHeight / 2}px`;
+        grid.append(star);
+        window.setTimeout(() => star.remove(), 380);
+      }
+    };
     el.append(grid);
     // Ablauf festlegen: Maulwürfe und dazwischen Bomben
     const events: { hole: number; bomb: boolean; at: number }[] = [];
@@ -184,7 +203,9 @@ const mole: MicroGame = {
     holes.forEach((btn) =>
       onPress(btn, () => {
         const me = showing.get(btn);
-        if (over || !me || me.hit) return;
+        if (over) return;
+        swing(btn, Boolean(me && !me.hit && !me.bomb));
+        if (!me || me.hit) return;
         if (me.bomb) {
           over = true;
           btn.classList.add("boom");
@@ -608,14 +629,8 @@ const order: MicroGame = {
     }
     const sorted = [...values].sort((a, b) => a - b);
     const field = h("div", "order-field");
-    const cols = P.count > 9 ? 4 : 3;
-    const rows = Math.ceil(P.count / cols) + 1;
-    // Feste Zellen mit wenig Wackeln → Kreise überlappen nie
-    const cellsXY = rng.shuffle(Array.from({ length: cols * rows }, (_, i) => [i % cols, Math.floor(i / cols)] as const)).slice(0, P.count);
-    const spots = cellsXY.map(([c, r]) => ({
-      x: 8 + ((c + 0.5) * 84) / cols + (rng.next() - 0.5) * (18 / cols),
-      y: 8 + ((r + 0.5) * 84) / rows + (rng.next() - 0.5) * (18 / rows),
-    }));
+    // Zufällig verteilt, aber immer mit Abstand → Kreise berühren sich nie
+    const spots = spread(rng, P.count, 70, 36);
     const btns = new Map<number, HTMLElement>();
     let pos = 0;
     values.forEach((v, i) => {

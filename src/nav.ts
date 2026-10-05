@@ -1,15 +1,19 @@
 // Navigation: Hash-Routen (#/start, #/spielen, #/minigames/memory …) und die untere Tab-Leiste.
 // Der Zurück-Knopf des Handys funktioniert, und nach dem Neuladen bleibt man auf demselben Bildschirm.
 
-export type TabId = "start" | "spielen" | "ranglisten" | "freunde" | "profil";
+export type TabId = "start" | "spielen" | "ranglisten" | "clan" | "freunde" | "profil";
 
 export const TABS: { id: TabId; icon: string; label: string }[] = [
   { id: "start", icon: "🏠", label: "Start" },
   { id: "spielen", icon: "🎮", label: "Spielen" },
   { id: "ranglisten", icon: "🏆", label: "Ranglisten" },
+  { id: "clan", icon: "🛡️", label: "Clan" },
   { id: "freunde", icon: "👥", label: "Freunde" },
   { id: "profil", icon: "👤", label: "Profil" },
 ];
+
+/** Rote Zahlen an den Tabs (z. B. neue Freundesanfragen). Wird von badges.ts aktualisiert. */
+export const TAB_BADGES: Partial<Record<TabId, number>> = {};
 
 /** Aktuelle Route als Teile, z. B. ["minigames", "memory"]. Leer/unbekannt → ["start"]. */
 export function routeParts(hash: string = location.hash): string[] {
@@ -49,7 +53,7 @@ export function tabBarHtml(active: TabId | null): string {
   return `<nav class="tabbar" aria-label="Hauptmenü">
     ${TABS.map(
       (t) => `<a class="tab${t.id === active ? " on" : ""}" href="#/${t.id}" data-tab="${t.id}"${t.id === active ? ` aria-current="page"` : ""}>
-        <span class="tab-ico" aria-hidden="true">${t.icon}</span><span class="tab-label">${t.label}</span>
+        <span class="tab-ico" aria-hidden="true">${t.icon}</span>${(TAB_BADGES[t.id] ?? 0) > 0 ? `<b class="tab-badge">${(TAB_BADGES[t.id] ?? 0) > 99 ? "99+" : TAB_BADGES[t.id]}</b>` : ""}<span class="tab-label">${t.label}</span>
       </a>`,
     ).join("")}
   </nav>`;

@@ -72,7 +72,7 @@ export interface MicroGame {
   mount(ctx: Ctx): Mounted;
 }
 
-import { lerp, st, h, onPress, scatter } from "./gameKit";
+import { lerp, st, h, onPress, scatter, spread } from "./gameKit";
 import { GAMES_WAVE3 } from "./games2";
 import { GAMES_WAVE4 } from "./games3";
 
@@ -558,14 +558,20 @@ function mountPopStage({ el, rng, finish, sfx, expose }: Pick<Ctx, "el" | "rng" 
   let left = k;
   const field = h("div", "pop-field");
   const bubbles: HTMLElement[] = [];
-  const size = (lo: number, hi: number) => rng.int(total > 12 ? lo - 16 : total > 8 ? lo - 8 : lo, total > 12 ? hi - 20 : total > 8 ? hi - 10 : hi);
-  const spots = scatter(rng, total, 4, 5, 10);
+  // Viele Blasen: kleinere Blasen und weniger Schweben – und ein Mindestabstand, damit sich nichts überlappt
+  const dense = total > 12;
+  const mid = total > 8;
+  const maxSize = dense ? 54 : mid ? 66 : 86;
+  const size = () => (dense ? rng.int(46, 54) : mid ? rng.int(56, 66) : rng.int(66, 86));
+  const dr = dense ? 10 : 16;
+  const drift0 = P.moving ? dr : 0;
+  const spots = spread(rng, total, maxSize + drift0 * 1.6 + 6, maxSize / 2 + drift0 + 6);
   spots.forEach((p, i) => {
     const bad = i >= k;
     const b = h("button", bad ? "bubble bad" : "bubble");
     b.setAttribute("aria-label", bad ? "Rote Blase – nicht antippen" : "Blase");
-    const s = size(66, 86);
-    const drift = P.moving ? `;--dx:${rng.int(-26, 26)}px;--dy:${rng.int(-22, 22)}px` : "";
+    const s = size();
+    const drift = P.moving ? `;--dx:${rng.int(-dr, dr)}px;--dy:${rng.int(-dr, dr)}px` : "";
     b.style.cssText = `left:${p.x}%;top:${p.y}%;width:${s}px;height:${s}px;--c:${bad ? "#ff2d3d" : rng.pick(PALETTE)};animation-delay:${i * 30}ms,${rng.int(0, 600)}ms${drift}`;
     if (P.moving) b.classList.add("drift");
     onPress(b, () => {

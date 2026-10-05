@@ -38,3 +38,32 @@ export function scatter(rng: Rng, count: number, cols: number, rows: number, pad
     });
 }
 
+
+/**
+ * Zufällige Positionen (in %) mit Mindestabstand – für Spiele, bei denen sich nichts überlappen darf.
+ * Gerechnet wird auf einem typischen Handy-Spielfeld (w×h px), der Abstand `minPx` gilt dort zwischen den Mittelpunkten.
+ */
+export function spread(rng: Rng, count: number, minPx: number, padPx = 40, w = 330, h = 470) {
+  const px = (padPx / w) * 100;
+  const py = (padPx / h) * 100;
+  const pts: { x: number; y: number }[] = [];
+  let min = minPx;
+  for (let i = 0; i < count; i++) {
+    let placed = false;
+    for (let tries = 0; tries < 400 && !placed; tries++) {
+      const x = px + rng.next() * (100 - 2 * px);
+      const y = py + rng.next() * (100 - 2 * py);
+      const ok = pts.every((p) => Math.hypot(((p.x - x) / 100) * w, ((p.y - y) / 100) * h) >= min);
+      if (ok) {
+        pts.push({ x, y });
+        placed = true;
+      }
+    }
+    if (!placed) {
+      // Kein Platz mehr: Abstand etwas lockern und diesen Punkt nochmal versuchen
+      min *= 0.92;
+      i--;
+    }
+  }
+  return pts;
+}

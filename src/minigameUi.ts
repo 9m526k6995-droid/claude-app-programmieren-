@@ -4,7 +4,14 @@
 import { esc, sleep } from "./ui";
 import { GAMES, GAME_BY_ID, type MicroGame } from "./games";
 import { leagueById } from "./trophies";
-import type { MinigameBest, MinigameBoard, MinigameEntry } from "./social";
+import type { MinigameBest, MinigameBoard, MinigameEntry, MinigameRanking } from "./social";
+import { fmtScore, scoreFromStage } from "./score";
+
+/** Highscore eines Bestwerts (ältere Server liefern noch keine Punkte → aus der Stufe umrechnen) */
+export function bestScore(b: MinigameBest | undefined | null): number {
+  if (!b) return 0;
+  return b.best_score ?? scoreFromStage(b.best_stage);
+}
 
 /** 12345 ms → „12,3 s“ */
 export function fmtMs(ms: number): string {
@@ -19,11 +26,11 @@ export type BestMap = Map<string, MinigameBest>;
 export function minigameGridHtml(bests: BestMap | null): string {
   return `<div class="mg-grid">${GAMES.map((g) => {
     const b = bests?.get(g.id);
-    const stage = b?.best_stage ?? 0;
+    const score = bestScore(b);
     return `<a class="mg-card" href="#/minigames/${g.id}" data-mg="${g.id}" style="--bg:${g.bg}">
       <span class="mg-emoji" aria-hidden="true">${g.emoji}</span>
       <b class="mg-name">${esc(g.title)}</b>
-      <small class="mg-best">${stage ? `Bestes: Stufe ${stage}` : bests ? "Noch nicht gespielt" : "&nbsp;"}</small>
+      <small class="mg-best">${score ? `🏅 ${fmtScore(score)} · Stufe ${b!.best_stage}` : bests ? "Noch nicht gespielt" : "&nbsp;"}</small>
       ${b?.rank ? `<span class="mg-rank">#${b.rank}</span>` : ""}
     </a>`;
   }).join("")}</div>`;
@@ -35,8 +42,8 @@ function entryRow(e: MinigameEntry, me: boolean): string {
   const l = leagueById(e.league);
   return `<button class="row-item trow mrow ${me ? "me" : ""}" data-player="${esc(e.username)}">
       <span class="rk">${["🥇", "🥈", "🥉"][e.rank - 1] ?? e.rank}</span>
-      <span class="nm">${esc(e.username)}${me ? " (du)" : ""}<small style="--lc:${l.color}">${l.emoji} ${l.name} · ${fmtMs(e.ms)}</small></span>
-      <b>Stufe ${e.stage}</b>
+      <span class="nm">${esc(e.username)}${me ? " (du)" : ""}<small style="--lc:${l.color}">${l.emoji} ${l.name} · Stufe ${e.stage}</small></span>
+      <b class="score-cell">${fmtScore(e.score ?? scoreFromStage(e.stage))}<small>Punkte</small></b>
     </button>`;
 }
 
@@ -52,8 +59,34 @@ export function minigameBoardHtml(b: MinigameBoard): string {
       : "";
   return rows
     ? `<div class="list">${rows}${outside}</div>
-       <p class="muted center small">${b.total} ${b.total === 1 ? "Spieler" : "Spieler:innen"} · höchste Stufe zuerst, bei Gleichstand zählt die Zeit</p>`
+       <p class="muted center small">${b.total} ${b.total === 1 ? "Spieler" : "Spieler:innen"} · die meisten Punkte zuerst</p>`
     : `<div class="empty">Noch niemand in dieser Rangliste.<br>Sei die/der Erste!</div>`;
+}
+
+export type RankScope = "world" | "friends" | "clan";
+
+export function rankScopeHtml(scope: RankScope): string {
+  const items: [RankScope, string][] = [["world", "🌍 Welt"], ["friends", "👥 Freunde"], ["clan", "🛡️ Clan"]];
+  return `<div class="seg seg-sm" role="tablist" aria-label="Rangliste">${items
+    .map(([k, label]) => `<button class="seg-btn ${k === scope ? "on" : ""}" role="tab" aria-selected="${k === scope}" data-scope="${k}">${label}</button>`)
+    .join("")}</div>`;
+}
+
+export function minigameRankingHtml(r: MinigameRanking): string {
+  if (r.scope === "clan" && !r.has_clan) {
+    return `<div class="empty">Du bist noch in keinem Clan.<br><a class="link-btn" href="#/clan">Clan finden oder gründen ›</a></div>`;
+  }
+  const top = r.rows.filter((x) => x.rank <= 50);
+  const extra = r.rows.filter((x) => x.rank > 50);
+  const rows = top.map((x) => entryRow(x, Boolean(x.is_me))).join("");
+  const outside = extra.length ? `<div class="wr-gap" aria-hidden="true">⋯</div>${extra.map((x) => entryRow(x, Boolean(x.is_me))).join("")}` : "";
+  if (!rows) {
+    return r.scope === "friends"
+      ? `<div class="empty">Deine Freunde haben dieses Spiel noch nicht gespielt.<br>Fordere sie heraus!</div>`
+      : `<div class="empty">Noch niemand in dieser Rangliste.<br>Sei die/der Erste!</div>`;
+  }
+  const label = r.scope === "world" ? `${r.total} ${r.total === 1 ? "Spieler" : "Spieler:innen"} weltweit` : r.scope === "friends" ? "Du und deine Freunde" : "Dein Clan";
+  return `<div class="list">${rows}${outside}</div><p class="muted center small">${label} · die meisten Punkte zuerst</p>`;
 }
 
 // ---------- Detailseite ----------
@@ -70,13 +103,14 @@ export function minigameDetailHtml(g: MicroGame, best: MinigameBest | undefined)
       <ul class="mg-prog">${g.progressionText.map((t) => `<li>${esc(t)}</li>`).join("")}</ul>
     </section>
     <section class="mg-stats" aria-label="Deine Werte">
-      <div><span>Bestleistung</span><b>${best?.best_stage ? `Stufe ${best.best_stage}` : "–"}</b>${best?.best_stage ? `<small>${fmtMs(best.best_ms)}</small>` : ""}</div>
-      <div><span>Dein Rang</span><b>${best?.rank ? `#${best.rank}` : "–"}</b></div>
+      <div><span>Highscore</span><b>${bestScore(best) ? fmtScore(bestScore(best)) : "–"}</b>${best?.best_stage ? `<small>beste Stufe ${best.best_stage}</small>` : ""}</div>
+      <div><span>Weltrang</span><b>${best?.rank ? `#${best.rank}` : "–"}</b></div>
       <div><span>Gespielt</span><b>${best?.plays ?? 0}×</b></div>
     </section>
     <button class="btn primary big" data-act="mgplay" data-game="${g.id}">▶ Spielen</button>
     <section>
       <h2 class="sec-title">Rangliste</h2>
+      <div id="mg-scope">${rankScopeHtml("world")}</div>
       <div id="mg-board"><div class="empty">Lädt…</div></div>
     </section>`;
 }
@@ -88,41 +122,19 @@ export function minigameRunHtml(g: MicroGame, best: number): string {
   <div class="screen play mg-play">
     <div class="hud mg-hud">
       <button class="icon-btn quit" data-act="mgquit" aria-label="Lauf beenden">✕</button>
-      <div class="mg-hud-mid"><b>${g.emoji} ${esc(g.title)}</b><span>Stufe <b id="mg-stage">1</b></span></div>
-      <div class="mg-hud-best" id="mg-best">${best ? `Rekord<b>${best}</b>` : `Rekord<b>–</b>`}</div>
+      <div class="mg-hud-mid"><b>${g.emoji} ${esc(g.title)}</b><span>Stufe <b id="mg-stage">1</b> · <b id="mg-score">0</b> Pkt.</span></div>
+      <div class="mg-hud-best" id="mg-best">Highscore<b>${best ? fmtScore(best) : "–"}</b></div>
     </div>
     <div class="timer"><div class="timer-fill" id="timer"></div></div>
     <div class="stage-holder" id="holder"></div>
   </div>`;
 }
 
-/** Kurze Startkarte: Name · 3 · 2 · 1 (ca. 1,5 s) – keine lange Erklärung. */
-export async function startCard(holder: HTMLElement, g: MicroGame, isAborted: () => boolean, tick: () => void) {
-  const card = document.createElement("div");
-  card.className = "intro mg-start";
-  card.style.background = g.bg;
-  card.innerHTML = `<div class="intro-emoji">${g.emoji}</div><div class="intro-title">${esc(g.title)}</div><div class="mg-count" aria-live="polite">3</div>`;
-  holder.replaceChildren(card);
-  const n = card.querySelector<HTMLElement>(".mg-count")!;
-  for (const t of ["3", "2", "1"]) {
-    if (isAborted()) return;
-    n.textContent = t;
-    n.classList.remove("pop");
-    void n.offsetWidth;
-    n.classList.add("pop");
-    tick();
-    await sleep(420);
-  }
-  if (isAborted()) return;
-  n.textContent = "Los!";
-  await sleep(240);
-}
-
-/** „Stufe 4 ✓“ – kurze Einblendung zwischen zwei Stufen (~0,6 s). */
-export async function stageClear(holder: HTMLElement, stage: number, record: boolean) {
+/** „Stufe 4 ✓ +175“ – kurze Einblendung zwischen zwei Stufen (~0,6 s). */
+export async function stageClear(holder: HTMLElement, stage: number, points: number, record: boolean, bonus = "") {
   const el = document.createElement("div");
   el.className = "mg-clear";
-  el.innerHTML = `<b>Stufe ${stage} ✓</b>${record ? `<span>Neuer Rekord!</span>` : ""}`;
+  el.innerHTML = `<b>Stufe ${stage} ✓</b><em>+${fmtScore(points)}${bonus ? ` <small>${bonus}</small>` : ""}</em>${record ? `<span>Neuer Highscore!</span>` : ""}`;
   holder.append(el);
   await sleep(600);
   el.remove();
@@ -134,8 +146,10 @@ export interface MgResultView {
   game: MicroGame;
   stage: number;
   totalMs: number;
+  score: number;
   record: boolean;
   prevBest: number;
+  clanXp?: number;
   rank: number | null;
   totalPlayers: number | null;
   saving?: boolean;
@@ -154,10 +168,10 @@ export function minigameResultHtml(v: MgResultView): string {
     </header>
     <section class="mg-res-card" style="--bg:${g.bg}">
       <span class="mg-hero-emoji" aria-hidden="true">${g.emoji}</span>
-      <div class="mg-res-kicker">${v.stage ? "Geschafft" : "Diesmal leider"}</div>
-      <div class="mg-res-stage">${v.stage ? `Stufe <b id="mg-res-n">${v.stage}</b>` : `<b>Stufe 0</b>`}</div>
-      <div class="mg-res-time">${v.stage ? `in ${fmtMs(v.totalMs)} Spielzeit` : "Gleich nochmal!"}</div>
-      ${v.record ? `<div class="mg-res-badge">🎉 Neuer Rekord!</div>` : v.prevBest ? `<div class="mg-res-sub">Dein Rekord: Stufe ${v.prevBest}</div>` : ""}
+      <div class="mg-res-kicker">${v.stage ? "Deine Punkte" : "Diesmal leider"}</div>
+      <div class="mg-res-stage"><b id="mg-res-score">${fmtScore(v.score)}</b></div>
+      <div class="mg-res-time">${v.stage ? `Stufe <b id="mg-res-n">${v.stage}</b> geschafft · ${fmtMs(v.totalMs)} Spielzeit` : "Stufe 0 – gleich nochmal!"}</div>
+      ${v.record ? `<div class="mg-res-badge">🎉 Neuer Highscore!</div>` : v.prevBest ? `<div class="mg-res-sub">Dein Highscore: ${fmtScore(v.prevBest)}</div>` : ""}
     </section>
     ${
       v.saving
@@ -168,6 +182,7 @@ export function minigameResultHtml(v: MgResultView): string {
             ? `<div class="mg-res-rank">Platz <b>#${v.rank}</b>${v.totalPlayers ? ` von ${v.totalPlayers}` : ""} in der ${esc(g.title)}-Rangliste</div>`
             : ""
     }
+    ${v.clanXp ? `<a class="mg-res-clan" href="#/clan">🛡️ <b>+${fmtScore(v.clanXp)} XP</b> für deinen Clan</a>` : ""}
     <div class="actions">
       <button class="btn primary" data-act="mgplay" data-game="${g.id}">Nochmal ▶</button>
       <div class="actions-row">
@@ -179,8 +194,8 @@ export function minigameResultHtml(v: MgResultView): string {
   </div>`;
 }
 
-export function minigameShareText(g: MicroGame, stage: number, link: string): string {
-  return `ZWIP ${g.emoji} ${g.title}: Stufe ${stage} – schaffst du mehr?\n${link}`;
+export function minigameShareText(g: MicroGame, stage: number, score: number, link: string): string {
+  return `ZWIP ${g.emoji} ${g.title}: ${fmtScore(score)} Punkte (Stufe ${stage}) – schaffst du mehr?\n${link}`;
 }
 
 export { GAME_BY_ID };

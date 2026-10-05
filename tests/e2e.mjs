@@ -35,7 +35,7 @@ function psqlFile(file, db = DB) {
     process.exit(1);
   }
   psql(`create database ${DB}`, "postgres");
-  for (const f of ["tests/sql/supabase-shim.sql", "supabase/profiles.sql", "supabase/schema.sql", "supabase/trophies.sql", "supabase/profile.sql", "supabase/minigames.sql"]) psqlFile(f);
+  for (const f of ["tests/sql/supabase-shim.sql", "supabase/profiles.sql", "supabase/schema.sql", "supabase/trophies.sql", "supabase/profile.sql", "supabase/minigames.sql", "supabase/social.sql", "supabase/clans.sql"]) psqlFile(f);
 }
 const lit = (v) =>
   v === null || v === undefined
@@ -257,6 +257,7 @@ async function stageCenter(page) {
 
 /** Löst die aktuelle Runde wie ein echter Mensch (Klick/Swipe). fail=true: absichtlich falsch. */
 const solvedLog = [];
+let hammerSeen = false;
 async function solveRound(page, lastN, fail = false) {
   await page.waitForFunction((n) => window.__zwip.round && window.__zwip.round.n > n, lastN, { timeout: 15000 }).catch(async (e) => {
     await page.screenshot({ path: `${SHOTS}/zz-timeout.png` });
@@ -391,7 +392,10 @@ async function solveRound(page, lastN, fail = false) {
           const b = m.getBoundingClientRect();
           return { x: b.left + b.width / 2, y: b.top + b.height / 2 };
         });
-        if (p) await page.mouse.click(p.x, p.y);
+        if (p) {
+          await page.mouse.click(p.x, p.y);
+          hammerSeen ||= await page.evaluate(() => Boolean(document.querySelector(".mole-hammer.swing")));
+        }
         void st;
       }
       break;
@@ -771,6 +775,23 @@ try {
   await B.page.waitForSelector(".score-big", { timeout: 30000 });
   const w4F = await B.page.evaluate(() => [...document.querySelectorAll(".tile b")].map((b) => Number(b.textContent)));
   check(w4F.every((p) => p === 0), `4. Welle erkennt Fehler (${w4fail.join(", ")} → ${w4F.join("/")})`);
+  check(hammerSeen, "Hau den Maulwurf: Der Hammer schlägt sichtbar zu");
+
+  // 8e) Zeit abgelaufen → die richtige Lösung wird markiert (Finde den Anderen, Rechnung, Farbe, Hütchen, Paar …)
+  await B.page.goto(`${BASE}?e2e=1&only=odd,sum,ink,cups,pair,spell&explain=200#/spielen`);
+  await B.page.waitForSelector('[data-act="free"]', { timeout: 5000 });
+  await B.page.click('[data-act="free"]', { force: true });
+  const solSeen = [];
+  let sn = 0;
+  for (let i = 0; i < 6; i++) {
+    await B.page.waitForFunction((n) => window.__zwip.round && window.__zwip.round.n > n, sn, { timeout: 15000 });
+    const id = await B.page.evaluate(() => window.__zwip.round.gameId);
+    sn = await B.page.evaluate(() => window.__zwip.round.n);
+    const ok = await B.page.waitForSelector(".stage .solution", { timeout: 12000 }).then(() => true, () => false);
+    if (ok) solSeen.push(id);
+    if (i === 0) await B.page.screenshot({ path: `${SHOTS}/z-timeout-solution-${id}.png` });
+  }
+  check(solSeen.length === 6, `Bei Zeitablauf wird die richtige Lösung markiert (${solSeen.join(", ")})`);
 
   // 9) Erklärkarte vor JEDER Aufgabe: läuft durch, lässt sich nicht wegtippen (Dauer im Test verkürzt)
   await B.page.goto(`${BASE}?e2e=1&explain=3000#/spielen`);
@@ -781,17 +802,24 @@ try {
   check(exText.length >= 60, `Ausführliche Erklärung wird gezeigt („${exText.slice(0, 40)}…“)`);
   const exStart = Number(await B.page.textContent(".explain-n"));
   check(exStart === 3, `Countdown startet bei der eingestellten Dauer (${exStart} s)`);
-  const ic = await stageCenterOf(B.page, ".intro");
+  const ic = await stageCenterOf(B.page, ".intro .intro-title");
   await B.page.mouse.click(ic.x, ic.y);
   await B.page.waitForTimeout(1300);
-  check(await B.page.isVisible(".intro.explain"), "Erklärung lässt sich nicht vorzeitig wegtippen");
+  check(await B.page.isVisible(".intro.explain"), "Daneben tippen überspringt die Erklärung nicht aus Versehen");
   check(Number(await B.page.textContent(".explain-n")) < exStart, "Countdown läuft herunter");
+  check(await B.page.isVisible(".explain-ok"), "Erklärkarte hat einen OK-Knopf");
   await B.page.screenshot({ path: `${SHOTS}/2-explain.png` });
   await B.page.waitForSelector(".intro.explain", { state: "detached", timeout: 4000 });
-  check(true, "Nach Ablauf startet die Aufgabe automatisch");
+  check(true, "Ohne OK startet die Aufgabe nach Ablauf von selbst");
   await solveRound(B.page, 0);
   await B.page.waitForSelector(".intro.explain", { timeout: 4000 });
   check((await B.page.textContent(".intro-round")).includes("2 / 10"), "Auch vor der zweiten Aufgabe kommt die Erklärkarte");
+  const okAt = Date.now();
+  const okB = await stageCenterOf(B.page, ".explain-ok");
+  await B.page.mouse.click(okB.x, okB.y);
+  await B.page.waitForSelector(".intro.explain", { state: "detached", timeout: 1500 });
+  check(Date.now() - okAt < 1200, `OK tippen startet die Aufgabe sofort (${Date.now() - okAt} ms statt 3 s)`);
+  await solveRound(B.page, 1);
 
   // Training abbrechen → zurück auf „Spielen“
   await B.page.click('[data-act="quit"]', { force: true });
@@ -801,7 +829,7 @@ try {
   // ================= NAVIGATION =================
   await B.page.goto(`${BASE}?e2e=1#/spielen`);
   await B.page.waitForSelector(".mode-list");
-  check((await B.page.locator(".tabbar .tab").count()) === 5, "Tab-Leiste mit 5 Bereichen");
+  check((await B.page.locator(".tabbar .tab").count()) === 6, "Tab-Leiste mit 6 Bereichen (inkl. Clan)");
   check((await B.page.getAttribute('.tab[data-tab="spielen"]', "aria-current")) === "page", "Aktiver Tab ist markiert");
   check((await B.page.locator(".mode-card").count()) === 5, "„Spielen“ zeigt 5 Modi");
   await B.page.screenshot({ path: `${SHOTS}/n1-spielen.png` });
@@ -994,13 +1022,29 @@ try {
   check(true, "Doppelte Anfrage nicht möglich (Status „Angefragt“)");
   await fB.screenshot({ path: `${SHOTS}/f1-search.png` });
 
+  // Badge: Lena sieht unten am Freunde-Symbol eine rote 1
+  await fB.goto(`${BASE}?e2e=1#/start`);
+  await tP.goto(`${BASE}?e2e=1#/start`);
+  await tP.reload();
+  const badgeIn = await tP.waitForFunction(() => document.querySelector('.tab[data-tab="freunde"] .tab-badge')?.textContent === "1", null, { timeout: 8000 }).then(() => true, () => false);
+  check(badgeIn, "Neue Freundesanfrage → rote 1 am Freunde-Symbol");
+  await tP.screenshot({ path: `${SHOTS}/f0-badge.png` });
   await tP.click('[data-tab="freunde"]', { force: true });
   await tP.waitForSelector('[data-accept="Tom"]', { timeout: 5000 });
+  check((await tP.locator('.tab[data-tab="freunde"] .tab-badge').count()) === 0, "Badge verschwindet beim Öffnen des Freunde-Tabs");
   check(true, "Eingehende Anfrage bei Lena sichtbar");
   await tP.screenshot({ path: `${SHOTS}/f2-incoming.png` });
   await tP.click('[data-accept="Tom"]', { force: true });
   await tP.waitForSelector('[data-friend="Tom"]', { timeout: 5000 });
   check(dbVal("select status from public.friendships") === "accepted", "Freundschaft in der Datenbank: accepted");
+  await fB.goto(`${BASE}?e2e=1#/start`);
+  await fB.reload();
+  const badgeAcc = await fB.waitForFunction(() => document.querySelector('.tab[data-tab="freunde"] .tab-badge')?.textContent === "1", null, { timeout: 8000 }).then(() => true, () => false);
+  check(badgeAcc, "Angenommene Anfrage → Badge beim Absender");
+  await fB.click('[data-tab="freunde"]', { force: true });
+  await fB.waitForSelector('[data-friend="Lena"]', { timeout: 5000 });
+  check((await fB.locator('.tab[data-tab="freunde"] .tab-badge').count()) === 0, "Badge beim Absender weg nach Öffnen");
+  check(dbVal("select count(*) from public.profiles where username = 'Tom' and friends_seen_at > now() - interval '1 minute'") === "1", "Gesehen-Zeitpunkt in der Datenbank gespeichert");
   psql("update public.profiles set trophies = 9000, best_trophies = 9000 where username = 'Tom'");
   await tP.goto(`${BASE}?e2e=1#/start`);
   await tP.click('[data-tab="freunde"]', { force: true });
@@ -1182,8 +1226,12 @@ try {
   check((await tP.textContent(".mg-hero p")).includes("Reihenfolge"), "Detailseite zeigt die Erklärung");
   await tP.screenshot({ path: `${SHOTS}/m1-detail.png`, fullPage: true });
   await tP.click('[data-act="mgplay"]', { force: true });
-  await tP.waitForSelector(".mg-start");
-  check((await tP.locator(".intro.explain").count()) === 0, "Minigame startet ohne lange Erklärkarte, nur mit 3-2-1");
+  await tP.waitForSelector(".intro.explain .explain-ok");
+  check(true, "Minigame startet mit Erklärung und OK-Knopf");
+  {
+    const okM = await stageCenterOf(tP, ".explain-ok");
+    await tP.mouse.click(okM.x, okM.y);
+  }
   await tP.screenshot({ path: `${SHOTS}/m2-start.png` });
   let mn = 0;
   for (let i = 0; i < 4; i++) {
@@ -1203,16 +1251,19 @@ try {
   await tP.waitForFunction(() => !document.querySelector(".mg-result .tr-status"), null, { timeout: 8000 });
   check((await tP.textContent("#mg-res-n")) === "4", "Ergebnis zeigt Stufe 4");
   check(dbVal("select best_stage || '/' || plays from public.minigame_bests b join public.profiles p on p.id = b.user_id where p.username = 'Lena' and b.game_id = 'memory'") === "4/1", "Stufe 4 steht in der Datenbank");
-  check((await tP.textContent(".mg-result")).includes("Neuer Rekord"), "Erster Lauf = neuer Rekord");
+  check((await tP.textContent(".mg-result")).includes("Neuer Highscore"), "Erster Lauf = neuer Highscore");
+  const resScore = Number((await tP.textContent("#mg-res-score")).replace(/\D/g, ""));
+  const dbScore = Number(dbVal("select best_score from public.minigame_bests b join public.profiles p on p.id = b.user_id where p.username = 'Lena' and b.game_id = 'memory'"));
+  check(resScore >= 550 && resScore === dbScore, `Punkte: Ergebnis ${resScore} = Datenbank ${dbScore} (4 Stufen, mind. 550)`);
   check((await tP.textContent(".mg-res-rank")).includes("#1"), "Rang in der Spiel-Rangliste wird angezeigt");
   await tP.screenshot({ path: `${SHOTS}/m4-result.png` });
 
   // Spieler mit besserem Wert steht davor
-  psql(`insert into public.minigame_bests (user_id, game_id, best_stage, best_ms, plays) values ('11111111-2222-3333-4444-555555555555', 'memory', 9, 30000, 3)`);
+  psql(`insert into public.minigame_bests (user_id, game_id, best_stage, best_ms, plays, best_score) values ('11111111-2222-3333-4444-555555555555', 'memory', 9, 30000, 3, 5000)`);
   await tP.click('[data-act="mgboard"]', { force: true });
   await tP.waitForSelector(".mrow", { timeout: 5000 });
   const mrows = await tP.$$eval(".mrow", (els) => els.map((e) => ({ name: e.dataset.player, me: e.classList.contains("me") })));
-  check(mrows[0]?.name === "Profi" && mrows[1]?.name === "Lena" && mrows[1].me, `Spiel-Rangliste: Profi (Stufe 9) vor mir (${mrows.map((r) => r.name).join(", ")})`);
+  check(mrows[0]?.name === "Profi" && mrows[1]?.name === "Lena" && mrows[1].me, `Spiel-Rangliste: Profi (5.000 Punkte) vor mir (${mrows.map((r) => r.name).join(", ")})`);
   check(tP.url().endsWith("#/ranglisten/minigames/memory"), "Rangliste öffnet den Minigames-Tab mit dem richtigen Spiel");
   await tP.screenshot({ path: `${SHOTS}/m5-board.png` });
 
@@ -1233,7 +1284,7 @@ try {
 
   // Übersicht zeigt Bestwerte und Ränge
   await tP.goto(`${BASE}?e2e=1#/minigames`);
-  await tP.waitForFunction(() => document.querySelector('.mg-card[data-mg="memory"] .mg-best')?.textContent.includes("Stufe 4"), null, { timeout: 5000 });
+  await tP.waitForFunction(() => document.querySelector('.mg-card[data-mg="memory"] .mg-best')?.textContent.includes("Stufe 4") && document.querySelector('.mg-card[data-mg="memory"] .mg-best')?.textContent.includes("🏅"), null, { timeout: 5000 });
   check((await tP.textContent('.mg-card[data-mg="memory"]')).includes("#2"), "Übersicht zeigt Bestleistung und Rang");
   await tP.screenshot({ path: `${SHOTS}/m6-overview.png` });
 
@@ -1248,10 +1299,107 @@ try {
   await new Promise((r) => setTimeout(r, 800));
   check(dbVal("select plays from public.minigame_bests b join public.profiles p on p.id = b.user_id where p.username = 'Lena' and b.game_id = 'ink'") === "1", "Zurück-Knopf beendet den Lauf, er wird trotzdem gewertet");
 
+  // ================= CLANS =================
+  await tP.goto(`${BASE}?e2e=1#/clan`);
+  await tP.waitForSelector('[data-c="create-open"]', { timeout: 8000 });
+  check(true, "Clan-Tab ohne Clan: Gründen und Suchen");
+  await tP.screenshot({ path: `${SHOTS}/c1-noclan.png`, fullPage: true });
+  await tP.click('[data-c="create-open"]', { force: true });
+  await tP.fill("#cf-name", "Blitz Crew");
+  await tP.click('.emblem-opt[data-emblem="⚡"]', { force: true });
+  check(await tP.isDisabled('.emblem-opt[data-emblem="👑"]'), "Gesperrte Wappen (erst ab höherem Level) sind nicht wählbar");
+  await tP.fill("#cf-desc", "Wir sind schnell");
+  await tP.screenshot({ path: `${SHOTS}/c2-create.png`, fullPage: true });
+  await tP.click("#cf-go", { force: true });
+  await tP.waitForSelector("#inv-form", { timeout: 8000 });
+  check(dbVal("select emblem || name from public.clans") === "⚡Blitz Crew", "Clan gegründet (Datenbank)");
+  check((await tP.textContent(".clan-head")).includes("Level 1"), "Clan-Kopf mit Level");
+  await tP.fill("#inv-name", "Tom");
+  await tP.click('#inv-form button[type="submit"]', { force: true });
+  const invited = await tP.waitForFunction(() => document.querySelector(".toast")?.textContent.includes("eingeladen"), null, { timeout: 5000 }).then(() => true, () => false);
+  check(invited && dbVal("select count(*) from public.clan_requests where kind = 'invite'") === "1", "Tom eingeladen");
+
+  // Tom sieht ein Badge am Clan-Tab und nimmt die Einladung an
+  await fB.goto(`${BASE}?e2e=1#/start`);
+  await fB.reload();
+  const clanBadge = await fB.waitForFunction(() => document.querySelector('.tab[data-tab="clan"] .tab-badge')?.textContent === "1", null, { timeout: 8000 }).then(() => true, () => false);
+  check(clanBadge, "Einladung → Badge am Clan-Tab");
+  await fB.click('[data-tab="clan"]', { force: true });
+  await fB.waitForSelector('[data-c="inv-yes"]', { timeout: 5000 });
+  await fB.click('[data-c="inv-yes"]', { force: true });
+  await fB.waitForSelector(".clan-head", { timeout: 8000 });
+  check(dbVal("select member_count from public.clans") === "2", "Tom ist im Clan (2 Mitglieder)");
+  await fB.screenshot({ path: `${SHOTS}/c3-overview.png`, fullPage: true });
+  check((await fB.locator(".chal").count()) === 6, "Sechs Wochen-Challenges mit Fortschritt");
+
+  // Tom spielt ein Minigame → Punkte werden Clan-XP
+  await fB.goto(`${BASE}?e2e=1#/minigames/odd`);
+  await fB.waitForSelector('[data-act="mgplay"]');
+  await fB.click('[data-act="mgplay"]', { force: true });
+  {
+    let k = 0;
+    for (let i = 0; i < 2; i++) k = (await solveRound(fB, k)).n;
+    await solveRound(fB, k, true);
+  }
+  await fB.waitForSelector(".mg-res-clan", { timeout: 10000 });
+  const clanXp = Number(dbVal("select xp from public.clans"));
+  check(clanXp >= 225 && (await fB.textContent(".mg-res-clan")).includes("XP"), `Minigame-Punkte gehen an den Clan (${clanXp} XP)`);
+
+  // Chat: Filter und Schnellnachricht
+  await fB.goto(`${BASE}?e2e=1#/clan/chat`);
+  await fB.waitForSelector("#chat-in", { timeout: 8000 });
+  await fB.fill("#chat-in", "Hallo du Arschloch");
+  await fB.click('#chat-form button[type="submit"]', { force: true });
+  const filtered = await fB.waitForFunction(() => [...document.querySelectorAll(".msg.me .msg-body")].some((m) => m.textContent === "Hallo du *********"), null, { timeout: 6000 }).then(() => true, () => false);
+  check(filtered, "Chat: Schimpfwort wird ersetzt");
+  await fB.waitForTimeout(2200);
+  await fB.click('[data-quick="1"]', { force: true });
+  const quick = await fB.waitForFunction(() => [...document.querySelectorAll(".msg.me .msg-body")].some((m) => m.textContent === "GG! 🎉"), null, { timeout: 6000 }).then(() => true, () => false);
+  check(quick, "Chat: Schnellnachricht");
+  await fB.screenshot({ path: `${SHOTS}/c4-chat.png` });
+
+  // Lena: ungelesene Nachrichten als Badge, nach dem Lesen weg; Nachricht melden
+  await tP.goto(`${BASE}?e2e=1#/start`);
+  await tP.reload();
+  const unreadBadge = await tP.waitForFunction(() => Number(document.querySelector('.tab[data-tab="clan"] .tab-badge')?.textContent) >= 2, null, { timeout: 8000 }).then(() => true, () => false);
+  check(unreadBadge, "Ungelesene Chat-Nachrichten → Badge am Clan-Tab");
+  await tP.goto(`${BASE}?e2e=1#/clan/chat`);
+  await tP.waitForSelector(".msg[data-msg]", { timeout: 8000 });
+  await tP.waitForFunction(() => !document.querySelector('.tab[data-tab="clan"] .tab-badge'), null, { timeout: 8000 }).then(() => check(true, "Badge weg nach dem Lesen"), () => check(false, "Badge weg nach dem Lesen"));
+  await tP.click(".msg[data-msg]", { force: true });
+  await tP.waitForSelector('[data-m="report"]');
+  await tP.click('[data-m="report"]', { force: true });
+  await tP.waitForFunction(() => document.body.textContent.includes("ausgeblendet"), null, { timeout: 6000 });
+  check(dbVal("select count(*) from public.clan_messages where hidden") === "1", "Leiterin meldet → Nachricht ausgeblendet");
+
+  // Clan-Rangliste, Minigame-Rangliste „Clan“, Clan im Profil
+  await tP.goto(`${BASE}?e2e=1#/ranglisten/clans/week`);
+  await tP.waitForSelector("[data-clan]", { timeout: 8000 });
+  check((await tP.textContent("[data-clan]")).includes("Blitz Crew"), "Clan-Rangliste der Woche");
+  await tP.screenshot({ path: `${SHOTS}/c5-clanboard.png` });
+  await tP.goto(`${BASE}?e2e=1#/minigames/odd`);
+  await tP.waitForSelector('[data-scope="clan"]');
+  await tP.click('[data-scope="clan"]', { force: true });
+  await tP.waitForFunction(() => document.querySelector("#mg-board")?.textContent.includes("Tom"), null, { timeout: 6000 }).then(() => check(true, "Minigame-Rangliste „Clan“ zeigt Clan-Mitglieder"), () => check(false, "Minigame-Rangliste „Clan“ zeigt Clan-Mitglieder"));
+  await tP.click('[data-scope="friends"]', { force: true });
+  await tP.waitForFunction(() => document.querySelector('#mg-board')?.textContent.length > 0 && !document.querySelector('#mg-board')?.textContent.includes("Lädt"), null, { timeout: 6000 });
+  check(true, "Minigame-Rangliste „Freunde“ lädt");
+  await tP.click('#mg-board [data-player="Tom"], [data-player="Tom"]', { force: true }).catch(() => {});
+  await tP.goto(`${BASE}?e2e=1#/clan/mitglieder`);
+  await tP.waitForSelector('[data-player="Tom"]', { timeout: 8000 });
+  await tP.click('[data-player="Tom"]', { force: true });
+  const pfClan = await tP.waitForSelector(".pf-clan-link", { timeout: 8000 }).then(() => true, () => false);
+  check(pfClan && (await tP.textContent(".pf-clan-link")).includes("Blitz Crew"), "Profil zeigt den Clan");
+  await tP.screenshot({ path: `${SHOTS}/c6-profile-clan.png` });
+  await tP.goto(`${BASE}?e2e=1#/clan/einstellungen`);
+  await tP.waitForSelector("#cs-form");
+  check(true, "Leiterin sieht die Clan-Einstellungen");
+  await tP.screenshot({ path: `${SHOTS}/c7-settings.png`, fullPage: true });
+
   // ================= SCHMALE HANDYS (360 px) =================
   await tP.setViewportSize({ width: 360, height: 740 });
   const overflow = [];
-  for (const r of ["start", "spielen", "minigames", "minigames/memory", "ranglisten/welt", "ranglisten/minigames/memory", "ranglisten/crew", "freunde", "profil"]) {
+  for (const r of ["start", "spielen", "minigames", "minigames/memory", "ranglisten/welt", "ranglisten/minigames/memory", "ranglisten/crew", "ranglisten/clans", "clan", "clan/chat", "clan/mitglieder", "clan/einstellungen", "freunde", "profil"]) {
     await tP.goto(`${BASE}?e2e=1#/${r}`);
     await tP.waitForSelector(".tabbar");
     await tP.waitForTimeout(500);
@@ -1276,6 +1424,23 @@ try {
     check(ow === 0, `${id} Stufe ${n}: alles passt auf ein 360-px-Handy`);
     if (["newone", "count", "cups", "dodge", "slice", "stack", "ampel"].includes(id)) await tP.waitForTimeout(1600);
     await tP.screenshot({ path: `${SHOTS}/s360-${id}-${n}.png` });
+  }
+  // Ballons: Auch bewegliche Blasen (ab Stufe 6) verschwinden nach dem Antippen wirklich – geprüft bis Stufe 60
+  for (const n of [3, 6, 7, 12, 20, 40, 60]) {
+    await tP.evaluate((n) => window.__zwip.previewStage("pop", n), n);
+    await tP.waitForTimeout(350);
+    const pts = await tP.evaluate(() => [...document.querySelectorAll(".e2e-preview .bubble:not(.bad)")].map((b) => {
+      const r = b.getBoundingClientRect();
+      return { x: r.left + r.width / 2, y: r.top + r.height / 2 };
+    }));
+    for (const p of pts) await tP.evaluate(({ x, y }) => {
+      const el = document.elementFromPoint(x, y)?.closest(".bubble");
+      el?.dispatchEvent(new PointerEvent("pointerdown", { bubbles: true, cancelable: true }));
+    }, p);
+    await tP.waitForTimeout(400);
+    const visible = await tP.evaluate(() => [...document.querySelectorAll(".e2e-preview .bubble.popped")].filter((b) => Number(getComputedStyle(b).opacity) > 0.05).length);
+    const popped = await tP.evaluate(() => document.querySelectorAll(".e2e-preview .bubble.popped").length);
+    check(visible === 0 && popped > 0, `Blasen Stufe ${n}: alle ${popped} angetippten sind weg${visible ? ` (${visible} noch sichtbar)` : ""}`);
   }
   await tP.evaluate(() => document.querySelector(".e2e-preview")?.remove());
   await tP.setViewportSize({ width: 390, height: 844 });

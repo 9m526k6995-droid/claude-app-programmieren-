@@ -346,3 +346,56 @@ test("Profil-Link und Profilbild-Anzeige", () => {
   assert.equal(memberSince("2026-10-05T10:00:00Z"), "Dabei seit Oktober 2026");
   assert.equal(memberSince(undefined), "");
 });
+
+// ---------- Highscores & Clans ----------
+import { readFileSync } from "node:fs";
+import { stagePoints, runScore, scoreFromStage, stageBase } from "../src/score";
+import { EMBLEMS, COLORS, FRAMES, QUICK_MESSAGES, clanLevel, levelXp, nextRewards } from "../src/clanKit";
+
+const clansSql = readFileSync(new URL("../supabase/clans.sql", import.meta.url), "utf8");
+
+test("Minigame-Punkte: gleiche Formel wie der Server", () => {
+  const sp = { veryFast: 900, fast: 1700 };
+  assert.equal(stageBase(1), 100);
+  assert.equal(stageBase(10), 325);
+  assert.equal(stagePoints(1, 5000, sp), 100);
+  assert.equal(stagePoints(1, 1700, sp), 125);
+  assert.equal(stagePoints(2, 900, sp), 188); // 125 · 1,5 = 187,5 → 188 (wie round() in Postgres)
+  assert.equal(runScore([{ ok: true, t: 2000 }, { ok: true, t: 2000 }, { ok: false, t: 100 }], sp), 225);
+  assert.equal(scoreFromStage(4), 550);
+  assert.equal(scoreFromStage(0), 0);
+  // Mehr Stufen geben immer mehr Punkte, auch ohne Bonus
+  for (let n = 1; n < 60; n++) assert.ok(scoreFromStage(n + 1) > scoreFromStage(n));
+});
+
+test("Tempo-Grenzen in der Datenbank passen zu den Spielen", () => {
+  for (const g of GAMES) {
+    const m = clansSql.match(new RegExp(`when '${g.id}' then array\\[(\\d+), (\\d+)\\]`));
+    assert.ok(m, `${g.id} fehlt in zwip_minigame_speed`);
+    assert.equal(Number(m![1]), g.speed.veryFast, `${g.id} sehr schnell`);
+    assert.equal(Number(m![2]), g.speed.fast, `${g.id} schnell`);
+  }
+  const minigamesSql = readFileSync(new URL("../supabase/minigames.sql", import.meta.url), "utf8");
+  for (const g of GAMES) assert.match(minigamesSql, new RegExp(`when '${g.id}'\\s+then \\d+`), `${g.id} fehlt in zwip_minigame_min_ms`);
+});
+
+test("Clan-Freischaltungen und Schnellnachrichten passen zur Datenbank", () => {
+  const block = (kind: string) => clansSql.slice(clansSql.indexOf(`when '${kind}' then case`), clansSql.indexOf("else null end", clansSql.indexOf(`when '${kind}' then case`)));
+  for (const x of EMBLEMS) assert.match(block("emblem"), new RegExp(`'${x.e}'[^\\n]*then ${x.lvl}\\b`), `Emblem ${x.e}`);
+  for (const x of COLORS) assert.match(block("color"), new RegExp(`'${x.c}'[^\\n]*then ${x.lvl}\\b`), `Farbe ${x.c}`);
+  for (const x of FRAMES) assert.match(block("frame"), new RegExp(`'${x.f}' then ${x.lvl}\\b`), `Rahmen ${x.f}`);
+  assert.equal(QUICK_MESSAGES.length, 7);
+  for (const q of QUICK_MESSAGES) assert.ok(clansSql.includes(`'${q}'`), `Schnellnachricht ${q}`);
+  assert.equal(clanLevel(0), 1);
+  assert.equal(clanLevel(999), 1);
+  assert.equal(clanLevel(1000), 2);
+  assert.equal(clanLevel(16000), 5);
+  assert.equal(clanLevel(1e12), 50);
+  assert.equal(levelXp(5), 16000);
+  assert.deepEqual(nextRewards(1, 1)[0].level, 2);
+});
+
+test("Clan-Tab in der Navigation", () => {
+  assert.equal(tabFor(["clan", "chat"]), "clan");
+  assert.equal(tabFor(["clan", "c", "abc"]), "clan");
+});

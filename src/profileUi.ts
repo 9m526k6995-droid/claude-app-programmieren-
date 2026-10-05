@@ -34,6 +34,7 @@ function headHtml(p: ProfileCard, avatarSlot: string, title: string): string {
       <h3>${title}</h3>
       ${leagueBadge(l)}
       ${since ? `<small class="muted pf-since">${esc(since)}${p.trophy_rounds ? ` · ${p.trophy_rounds} Trophäen-Runden` : ""}</small>` : ""}
+      ${p.username ? `<div class="pf-clan" data-clan-for="${esc(p.username)}"></div>` : ""}
     </div>`;
 }
 
