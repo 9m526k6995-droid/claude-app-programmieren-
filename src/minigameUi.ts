@@ -6,6 +6,7 @@ import { GAMES, GAME_BY_ID, type MicroGame } from "./games";
 import { leagueById } from "./trophies";
 import type { MinigameBest, MinigameBoard, MinigameEntry, MinigameRanking } from "./social";
 import { fmtScore, scoreFromStage } from "./score";
+import { flag, countryName } from "./countries";
 
 /** Highscore eines Bestwerts (ältere Server liefern noch keine Punkte → aus der Stufe umrechnen) */
 export function bestScore(b: MinigameBest | undefined | null): number {
@@ -42,7 +43,7 @@ function entryRow(e: MinigameEntry, me: boolean): string {
   const l = leagueById(e.league);
   return `<button class="row-item trow mrow ${me ? "me" : ""}" data-player="${esc(e.username)}">
       <span class="rk">${["🥇", "🥈", "🥉"][e.rank - 1] ?? e.rank}</span>
-      <span class="nm">${esc(e.username)}${me ? " (du)" : ""}<small style="--lc:${l.color}">${l.emoji} ${l.name} · Stufe ${e.stage}</small></span>
+      <span class="nm">${e.country ? `<span class="flag" aria-label="${esc(countryName(e.country))}">${flag(e.country)}</span> ` : ""}${esc(e.username)}${me ? " (du)" : ""}<small style="--lc:${l.color}">${l.emoji} ${l.name} · Stufe ${e.stage}</small></span>
       <b class="score-cell">${fmtScore(e.score ?? scoreFromStage(e.stage))}<small>Punkte</small></b>
     </button>`;
 }
@@ -81,11 +82,19 @@ export function minigameRankingHtml(r: MinigameRanking): string {
   const rows = top.map((x) => entryRow(x, Boolean(x.is_me))).join("");
   const outside = extra.length ? `<div class="wr-gap" aria-hidden="true">⋯</div>${extra.map((x) => entryRow(x, Boolean(x.is_me))).join("")}` : "";
   if (!rows) {
+    if (/^[A-Z]{2}$/.test(r.scope)) return `<div class="empty">In ${flag(r.scope)} ${esc(countryName(r.scope))} hat dieses Spiel noch niemand gespielt.<br>Sei die/der Erste!</div>`;
     return r.scope === "friends"
       ? `<div class="empty">Deine Freunde haben dieses Spiel noch nicht gespielt.<br>Fordere sie heraus!</div>`
       : `<div class="empty">Noch niemand in dieser Rangliste.<br>Sei die/der Erste!</div>`;
   }
-  const label = r.scope === "world" ? `${r.total} ${r.total === 1 ? "Spieler" : "Spieler:innen"} weltweit` : r.scope === "friends" ? "Du und deine Freunde" : "Dein Clan";
+  const label =
+    r.scope === "world"
+      ? `${r.total} ${r.total === 1 ? "Spieler" : "Spieler:innen"} weltweit`
+      : r.scope === "friends"
+        ? "Du und deine Freunde"
+        : r.scope === "clan"
+          ? "Dein Clan"
+          : `${flag(r.scope)} ${countryName(r.scope)}${r.my_rank ? ` · du bist auf Platz ${r.my_rank}` : ""}`;
   return `<div class="list">${rows}${outside}</div><p class="muted center small">${label} · die meisten Punkte zuerst</p>`;
 }
 

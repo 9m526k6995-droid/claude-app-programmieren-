@@ -35,7 +35,7 @@ function psqlFile(file, db = DB) {
     process.exit(1);
   }
   psql(`create database ${DB}`, "postgres");
-  for (const f of ["tests/sql/supabase-shim.sql", "supabase/profiles.sql", "supabase/schema.sql", "supabase/trophies.sql", "supabase/profile.sql", "supabase/minigames.sql", "supabase/social.sql", "supabase/clans.sql"]) psqlFile(f);
+  for (const f of ["tests/sql/supabase-shim.sql", "supabase/profiles.sql", "supabase/schema.sql", "supabase/trophies.sql", "supabase/profile.sql", "supabase/minigames.sql", "supabase/social.sql", "supabase/clans.sql", "supabase/regions.sql"]) psqlFile(f);
 }
 const lit = (v) =>
   v === null || v === undefined
@@ -1396,10 +1396,59 @@ try {
   check(true, "Leiterin sieht die Clan-Einstellungen");
   await tP.screenshot({ path: `${SHOTS}/c7-settings.png`, fullPage: true });
 
+  // ================= LÄNDER =================
+  await tP.goto(`${BASE}?e2e=1#/ranglisten/welt`);
+  await tP.waitForSelector("[data-country-hint]", { timeout: 8000 });
+  check(true, "Hinweis „Wähl dein Land“ in der Rangliste");
+  await tP.waitForSelector('.region-chips [data-region="world"].on');
+  check(true, "Ohne Land ist „Weltweit“ gewählt");
+  await tP.goto(`${BASE}?e2e=1#/profil`);
+  await tP.waitForSelector('[data-cs="pick"]', { timeout: 8000 });
+  check((await tP.textContent("#country-set")).includes("einmal im Monat"), "Einstellungen erklären: Land einmal im Monat änderbar");
+  await tP.click('[data-cs="pick"]', { force: true });
+  await tP.fill("#cp-q", "deutsch");
+  await tP.click('.country-opt[data-code="DE"]', { force: true });
+  await tP.waitForFunction(() => document.querySelector("#country-set")?.textContent.includes("Deutschland"), null, { timeout: 6000 });
+  check(dbVal("select country from public.profiles where username = 'Lena'") === "DE", "Land Deutschland gespeichert");
+  psql("update public.profiles set country = 'DE' where username = 'Profi'");
+  psql("update public.profiles set country = 'NL' where username = 'Tom'");
+  psql("update public.profiles set country_changed_at = now() - interval '2 days' where username = 'Lena'");
+  await tP.goto(`${BASE}?e2e=1#/start`);
+  await tP.goto(`${BASE}?e2e=1#/profil`);
+  await tP.reload();
+  await tP.waitForFunction(() => document.querySelector("#country-set")?.textContent.includes("Nächste Änderung möglich ab"), null, { timeout: 8000 });
+  check(true, "Nach der Wahl steht da, ab wann man wieder ändern kann");
+  await tP.screenshot({ path: `${SHOTS}/l1-country-settings.png`, fullPage: true });
+  await tP.goto(`${BASE}?e2e=1#/ranglisten/welt`);
+  await tP.reload();
+  await tP.waitForSelector('.region-chips [data-region="DE"].on', { timeout: 8000 });
+  await tP.waitForFunction(() => document.querySelector(".wr-rank span")?.textContent.includes("Deutschland"), null, { timeout: 8000 });
+  const deNames = await tP.$$eval("#list [data-player]", (els) => [...new Set(els.map((e) => e.dataset.player))]);
+  check(deNames.includes("Lena") && deNames.includes("Profi") && !deNames.includes("Tom"), `Deutschland-Rangliste: nur deutsche Spieler (${deNames.join(", ")})`);
+  check((await tP.textContent(".wr-rank")).includes("weltweit"), "Platz im Land und weltweit");
+  await tP.screenshot({ path: `${SHOTS}/l2-board-de.png` });
+  await tP.click('.region-chips [data-region="NL"]', { force: true });
+  await tP.waitForFunction(() => [...document.querySelectorAll("#list [data-player]")].some((e) => e.dataset.player === "Tom"), null, { timeout: 8000 });
+  check(true, "Niederlande-Rangliste zeigt Tom");
+  await tP.click('.region-chips [data-region="world"]', { force: true });
+  await tP.waitForFunction(() => document.querySelector(".wr-rank span")?.textContent.includes("Weltrang"), null, { timeout: 8000 });
+  check((await tP.textContent("#list")).includes("🇩🇪"), "Weltrangliste zeigt Flaggen");
+  await tP.click('.region-chips [data-region="more"]', { force: true });
+  await tP.fill("#cp-q", "frank");
+  await tP.click('.country-opt[data-code="FR"]', { force: true });
+  await tP.waitForFunction(() => document.querySelector("#list")?.textContent.includes("Frankreich"), null, { timeout: 8000 });
+  check(true, "Jedes Land über „Weitere…“ wählbar");
+  await tP.goto(`${BASE}?e2e=1#/minigames/memory`);
+  await tP.waitForSelector('.mg-region [data-region="DE"]', { timeout: 8000 });
+  await tP.click('.mg-region [data-region="DE"]', { force: true });
+  await tP.waitForFunction(() => document.querySelector("#mg-board")?.textContent.includes("Deutschland"), null, { timeout: 8000 });
+  check((await tP.textContent("#mg-board")).includes("Lena"), "Minigame-Rangliste nach Land");
+  await tP.screenshot({ path: `${SHOTS}/l3-minigame-de.png` });
+
   // ================= SCHMALE HANDYS (360 px) =================
   await tP.setViewportSize({ width: 360, height: 740 });
   const overflow = [];
-  for (const r of ["start", "spielen", "minigames", "minigames/memory", "ranglisten/welt", "ranglisten/minigames/memory", "ranglisten/crew", "ranglisten/clans", "clan", "clan/chat", "clan/mitglieder", "clan/einstellungen", "freunde", "profil"]) {
+  for (const r of ["start", "spielen", "minigames", "minigames/memory", "ranglisten/welt", "ranglisten/minigames/memory", "ranglisten/crew", "ranglisten/clans", "ranglisten/welt", "clan", "clan/chat", "clan/mitglieder", "clan/einstellungen", "freunde", "profil"]) {
     await tP.goto(`${BASE}?e2e=1#/${r}`);
     await tP.waitForSelector(".tabbar");
     await tP.waitForTimeout(500);

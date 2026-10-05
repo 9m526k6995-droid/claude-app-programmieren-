@@ -52,7 +52,7 @@ Unten sitzt eine Leiste mit sechs Bereichen. Jeder Bildschirm hat eine eigene Ad
 |---|---|
 | 🏠 Start (`#/start`) | Daily spielen bzw. Ergebnis mit Teilen/Duell/Countdown, Duell-Einladung, Wochen-Streak |
 | 🎮 Spielen (`#/spielen`) | Alle Modi: Daily, Trophäen-Modus, **Minigames** (`#/minigames`), Training, Endlos |
-| 🏆 Ranglisten (`#/ranglisten/…`) | Trophäen (Welt), Minigames (pro Spiel, Welt/Freunde/Clan), Clans (Tag/Woche/Monat/Saison/Gesamt), Crew (Daily) |
+| 🏆 Ranglisten (`#/ranglisten/…`) | Trophäen (weltweit oder pro Land), Minigames (pro Spiel: Welt/Länder, Freunde, Clan), Clans weltweit (Tag/Woche/Monat/Saison/Gesamt), Crew (Daily) |
 | 🛡️ Clan (`#/clan`, `#/clan/chat`, `#/clan/mitglieder`, `#/clan/einstellungen`) | Clan gründen/suchen/beitreten, Übersicht mit Level, XP und Wochen-Challenges, Chat, Mitglieder, Einstellungen |
 | 👥 Freunde (`#/freunde`) | Spieler suchen, Anfragen, Freundesliste |
 | 👤 Profil (`#/profil`) | Profilbild, Werte, Profil-Link, Konto (Name, E-Mail, Passwort, Abmelden), Einstellungen |
@@ -153,6 +153,14 @@ Der Tab **Profil** zeigt das eigene Profil:
 - **Endlos** – so lange, bis der erste Fehler passiert.
 - **Duell** – per Link: Die andere Person spielt genau deine Runde, danach gibt es den Vergleich Challenge für Challenge.
 
+### Länder-Ranglisten
+
+- Im **Profil → Land für Ranglisten** wählt jeder sein Land selbst aus allen Ländern der Welt (mit Suche). Der echte Standort wird nie benutzt, ein Land ist keine Pflicht.
+- **Einmal im Monat änderbar** – das steht auch so in der App („Nächste Änderung möglich ab …“). Direkt nach einer Wahl gibt es 15 Minuten Korrekturzeit.
+- Wer will, kann sein Land **verbergen** und erscheint dann nur in den weltweiten Ranglisten.
+- In der Trophäen-Rangliste und in jeder Minigame-Rangliste lässt sich oben die Region wählen: **🌍 Weltweit · eigenes Land · 🇩🇪 Deutschland · 🇳🇱 Niederlande · 🌐 Weitere…** (jedes Land). Angezeigt wird der Platz im Land und weltweit, neben jedem Spieler steht seine Flagge.
+- Clans haben kein Land – die Clan-Rangliste ist weltweit.
+
 ### Clans
 
 Unter dem Tab **🛡️ Clan** kann jeder einen eigenen Clan gründen oder einem beitreten.
@@ -238,6 +246,8 @@ src/
   clanKit.ts      Clan-Freischaltungen, Schnellnachrichten, Level-Formel
   score.ts        Punkte-Formel der Minigames (identisch mit dem Server)
   badges.ts       Rote Zahlen an der Tab-Leiste
+  countries.ts    Alle Länder mit deutschem Namen und Flagge
+  regionUi.ts     Länderwahl im Profil und Regions-Auswahl in den Ranglisten
   ui.ts           Kleine UI-Helfer
   run.ts          Rundenaufbau, Punkte, Bewertung
   rng.ts          Seed-Zufall, Daily-Nummer
@@ -253,6 +263,7 @@ supabase/profile.sql  Profilbild und öffentliches Profil (Profil-Links)
 supabase/minigames.sql Minigame-Läufe und Ranglisten pro Spiel
 supabase/social.sql   Badges (neue Freundesanfragen usw.)
 supabase/clans.sql    Highscores (Punkte) für Minigames + Clans (XP, Level, Ranglisten, Challenges, Chat mit Filter)
+supabase/regions.sql  Land im Konto (1× im Monat änderbar) und Länder-Ranglisten
 src/games.ts / games2.ts / games3.ts  Die 27 Minispiele (games2 = dritte, games3 = vierte Welle), gameKit.ts = gemeinsame Bausteine
 supabase/schema.sql   Alte Tages-Punkteliste (wird nicht mehr genutzt)
 tests/                Logik-, Bestenlisten- und Browser-Tests

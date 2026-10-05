@@ -30,6 +30,17 @@ import { restoreSession, currentUser, signOut, onAuthChange } from "./auth";
 import { stagePoints, fmtScore, scoreFromStage } from "./score";
 import { renderClan, renderClanBoard, CLAN_PERIODS } from "./clanUi";
 import { emblemHtml } from "./clanKit";
+import {
+  loadMyCountry,
+  selectedRegion,
+  regionChipsHtml,
+  bindRegionChips,
+  countryHintHtml,
+  bindCountryHint,
+  countrySettingsHtml,
+  mountCountrySettings,
+  resetMyCountry,
+} from "./regionUi";
 import { startBadges, stopBadges, refreshBadges, friendsOpened } from "./badges";
 import { TROPHY_TASKS, scoreRound, tierFor, levelFor, formatTrophies, formatDelta, leagueFee, LEAGUES, type TaskResult } from "./trophies";
 import {
@@ -48,6 +59,7 @@ import {
   finishMinigameRun,
   getMinigameRanking,
   getPlayerClan,
+  getTrophyRegionBoard,
   getMyMinigameBests,
   type MyProfile,
   type MinigameBest,
@@ -894,7 +906,7 @@ async function loadMgBests(): Promise<BestMap | null> {
 
 function segHtml(active: string): string {
   const seg = [
-    ["welt", "Trophäen (Welt)"],
+    ["welt", "Trophäen"],
     ["minigames", "Minigames"],
     ["clans", "Clans"],
     ["crew", "Crew (Daily)"],
@@ -985,16 +997,32 @@ async function boardsScreen(sub = "welt", gameId?: string) {
     return;
   }
 
-  // Trophäen-Weltrangliste – kommt immer aus der Datenbank, sortiert nach Trophäen absteigend
-  const page = shell("ranglisten", "Ranglisten", `${segHtml(sub)}<div id="list" class="list"><div class="empty">Lädt…</div></div>`);
+  // Trophäen-Rangliste – weltweit oder für ein Land, kommt immer aus der Datenbank
+  const page = shell(
+    "ranglisten",
+    "Ranglisten",
+    `${segHtml(sub)}<div id="country-hint"></div><div id="region"></div><div id="list" class="list"><div class="empty">Lädt…</div></div>`,
+  );
   const list = page.querySelector<HTMLElement>("#list")!;
-  try {
-    const b = await getTrophyBoard(100);
-    if (!list.isConnected) return;
-    renderWorldBoard(list, b, { onSetName: () => askName(() => renderRoute()) });
-  } catch (e) {
-    if (list.isConnected) list.innerHTML = `<div class="inline-error" role="alert">${esc(errMsg(e))}</div>`;
-  }
+  const regionEl = page.querySelector<HTMLElement>("#region")!;
+  const hintEl = page.querySelector<HTMLElement>("#country-hint")!;
+  await loadMyCountry();
+  if (!list.isConnected) return;
+  hintEl.innerHTML = countryHintHtml();
+  bindCountryHint(hintEl, () => renderRoute());
+  const load = async (region: string) => {
+    regionEl.innerHTML = regionChipsHtml(region);
+    list.innerHTML = `<div class="empty">Lädt…</div>`;
+    try {
+      const b = region === "world" ? await getTrophyBoard(100) : await getTrophyRegionBoard(region, 100);
+      if (!list.isConnected || region !== selectedRegion()) return;
+      renderWorldBoard(list, { ...b, country: region === "world" ? null : region }, { onSetName: () => askName(() => renderRoute()) });
+    } catch (e) {
+      if (list.isConnected) list.innerHTML = `<div class="inline-error" role="alert">${esc(errMsg(e))}</div>`;
+    }
+  };
+  bindRegionChips(regionEl, (r) => void load(r));
+  void load(selectedRegion());
 }
 
 // ---------- Freunde ----------
@@ -1036,9 +1064,10 @@ function profileScreen() {
       <div class="row"><input id="set-name" maxlength="20" value="${esc(S.name)}" autocomplete="nickname"><button class="btn sm" id="set-save" type="button">Speichern</button></div>
       <label class="toggle"><input type="checkbox" id="set-sound" ${S.muted ? "" : "checked"}> Ton an</label>
     </section>
+    ${countrySettingsHtml()}
     <section class="card-sec how">
       <h2 class="sec-title">So geht ZWIP</h2>
-      <p>Jeden Tag gibt es eine Daily mit 10 Blitz-Challenges – für alle gleich. Vor jeder Aufgabe wird sie 4 Sekunden lang erklärt. Schnell + richtig = mehr Punkte (max. 1000).</p>
+      <p>Jeden Tag gibt es eine Daily mit 10 Blitz-Challenges – für alle gleich. Vor jeder Aufgabe kommt eine kurze Erklärung – mit „OK, los!“ geht's sofort weiter. Schnell + richtig = mehr Punkte (max. 1000).</p>
       <p>Im Trophäen-Modus sammelst du Trophäen für die Weltrangliste, bei den Minigames spielst du ein Spiel Stufe für Stufe – mit eigener Rangliste.</p>
       <p class="muted">Keine Werbung, keine Lootboxen.</p>
     </section>`,
@@ -1053,6 +1082,7 @@ function profileScreen() {
       toast("Du bist abgemeldet 👋");
     },
   });
+  void mountCountrySettings(page);
   page.querySelector("#set-save")!.addEventListener("click", () => {
     const n = page.querySelector<HTMLInputElement>("#set-name")!.value.trim();
     if (n) {
@@ -1076,15 +1106,21 @@ const GAMES_ORDER = Object.values(GAME_BY_ID);
 /** Zuletzt gewählte Minigame-Rangliste (Welt / Freunde / Clan) */
 let mgScope: RankScope = "world";
 
-/** Minigame-Rangliste mit Umschalter Welt / Freunde / Clan */
+/** Minigame-Rangliste mit Umschalter Welt / Freunde / Clan – bei „Welt“ zusätzlich die Region (weltweit oder ein Land) */
 function mountRanking(scopeEl: HTMLElement, listEl: HTMLElement, id: string) {
+  const regionEl = document.createElement("div");
+  regionEl.className = "mg-region";
+  scopeEl.after(regionEl);
   const load = async () => {
     scopeEl.innerHTML = rankScopeHtml(mgScope);
+    const region = mgScope === "world" ? selectedRegion() : "world";
+    regionEl.innerHTML = mgScope === "world" ? regionChipsHtml(region) : "";
     listEl.innerHTML = `<div class="empty">Lädt…</div>`;
-    const want = mgScope;
+    const want = mgScope === "world" && region !== "world" ? region : mgScope;
     try {
       const r = await getMinigameRanking(id, want, 50);
-      if (!listEl.isConnected || want !== mgScope) return;
+      const now = mgScope === "world" && selectedRegion() !== "world" ? selectedRegion() : mgScope;
+      if (!listEl.isConnected || want !== now) return;
       listEl.innerHTML = minigameRankingHtml(r);
       listEl.querySelectorAll<HTMLElement>("[data-player]").forEach((el) => el.addEventListener("click", () => openPlayer(el.dataset.player!)));
     } catch (e) {
@@ -1097,7 +1133,8 @@ function mountRanking(scopeEl: HTMLElement, listEl: HTMLElement, id: string) {
     mgScope = b.dataset.scope as RankScope;
     void load();
   });
-  void load();
+  bindRegionChips(regionEl, () => void load());
+  void loadMyCountry().then(() => load());
 }
 
 function minigamesScreen() {
@@ -1673,6 +1710,7 @@ onAuthChange((s) => {
     setCachedAvatar(undefined, null);
     mgBests = null;
     stopBadges();
+    resetMyCountry();
     // Nach dem Abmelden startet die nächste Anmeldung wieder auf „Start“
     if (location.hash) replaceRoute("start");
     showStart();

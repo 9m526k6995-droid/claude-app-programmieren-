@@ -8,6 +8,7 @@ export interface PlayerInfo {
   username: string;
   trophies: number;
   league: string;
+  country?: string | null;
   world_rank?: number;
   best_streak?: number;
   trophy_rounds?: number;
@@ -24,6 +25,8 @@ export interface BoardEntry extends PlayerInfo {
 }
 
 export interface TrophyBoard {
+  /** gesetzt = Rangliste dieses Landes (rank = Platz im Land) */
+  country?: string | null;
   top: BoardEntry[];
   me: PlayerInfo | null;
   above: PlayerInfo | null;
@@ -77,6 +80,7 @@ export interface MinigameEntry {
   rank: number;
   username: string;
   league: string;
+  country?: string | null;
   score: number;
   stage: number;
   ms: number;
@@ -165,6 +169,8 @@ const MESSAGES: Record<string, string> = {
   slow_down: "Nicht so schnell – warte kurz.",
   invalid_message: "Die Nachricht darf 1–200 Zeichen haben.",
   message_not_found: "Diese Nachricht gibt es nicht mehr.",
+  invalid_country: "Dieses Land gibt es nicht.",
+  country_locked: "Dein Land kannst du nur einmal im Monat ändern.",
   setup_missing: "Die Datenbank ist noch nicht auf dem neuesten Stand.",
   network: "Keine Verbindung zum Server. Prüfe dein Internet.",
   unknown: "Da ist etwas schiefgelaufen. Bitte versuch es nochmal.",
@@ -225,13 +231,13 @@ export const getBadges = () => call<Badges>("get_badges");
 export const markFriendsSeen = () => call<null>("mark_friends_seen");
 export const startMinigameRun = (game: string) => call<{ run_id: string; seed: number }>("start_minigame_run", { p_game: game });
 export interface MinigameRanking {
-  scope: "world" | "friends" | "clan";
+  scope: string;
   rows: (MinigameEntry & { world_rank: number })[];
   my_rank: number | null;
   has_clan: boolean;
   total: number;
 }
-export const getMinigameRanking = (game: string, scope: "world" | "friends" | "clan", limit = 50) =>
+export const getMinigameRanking = (game: string, scope: string, limit = 50) =>
   call<MinigameRanking>("get_minigame_ranking", { p_game: game, p_scope: scope, p_limit: limit });
 export const finishMinigameRun = (run: string, stage: number, totalMs: number, steps: { ok: boolean; ms: number; t?: number }[]) =>
   call<MinigameFinish>("finish_minigame_run", { p_run: run, p_stage: stage, p_total_ms: totalMs, p_steps: steps });
@@ -435,3 +441,20 @@ export const hideClanMessage = (id: number) => call<null>("hide_clan_message", {
 export const muteClanMember = (name: string, hours: number) => call<MyClan>("mute_clan_member", { p_username: name, p_hours: hours });
 export const getPlayerClan = (name: string) =>
   call<{ id: string; name: string; emblem: string; color: string; frame: string; level: number; role: string } | null>("get_player_clan", { p_username: name });
+
+// ---------- Land & regionale Ranglisten ----------
+
+export interface MyCountry {
+  country: string | null;
+  hidden: boolean;
+  changed_at: string | null;
+  next_change_at: string | null;
+  fix_until: string | null;
+  can_change: boolean;
+}
+
+export const getMyCountry = () => call<MyCountry>("get_my_country");
+export const setCountry = (code: string | null) => call<MyCountry>("set_country", { p_code: code ?? "" });
+export const setCountryHidden = (hidden: boolean) => call<MyCountry>("set_country_hidden", { p_hidden: hidden });
+export const getTrophyRegionBoard = (country: string | null, limit = 100) =>
+  call<TrophyBoard>("get_trophy_region_board", { p_country: country ?? "", p_limit: limit });

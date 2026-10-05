@@ -567,7 +567,9 @@ begin
   if public.zwip_minigame_min_ms(p_game) is null then
     raise exception 'unknown_game' using errcode = 'P0001';
   end if;
-  if scope not in ('world', 'friends', 'clan') then raise exception 'invalid_scope' using errcode = 'P0001'; end if;
+  -- Außer world/friends/clan geht auch ein Ländercode (z. B. 'DE') für die Rangliste eines Landes
+  scope := case when upper(scope) ~ '^[A-Z]{2}$' then upper(scope) else lower(scope) end;
+  if scope not in ('world', 'friends', 'clan') and scope !~ '^[A-Z]{2}$' then raise exception 'invalid_scope' using errcode = 'P0001'; end if;
   select clan_id into my_clan from public.zwip_cm where user_id = me;
 
   with base as (
@@ -580,10 +582,13 @@ begin
                and ((f.sender_id = me and f.receiver_id = r.user_id) or (f.receiver_id = me and f.sender_id = r.user_id)))))
        or (scope = 'clan' and my_clan is not null and exists (
              select 1 from public.zwip_cm m where m.user_id = r.user_id and m.clan_id = my_clan))
+       or (scope ~ '^[A-Z]{2}$' and exists (
+             select 1 from public.profiles pc where pc.id = r.user_id and pc.country = scope and not pc.country_hidden))
   )
   select coalesce(jsonb_agg(jsonb_build_object(
            'rank', b.pos, 'world_rank', b.world_rank, 'username', b.username, 'league', b.league,
-           'score', b.best_score, 'stage', b.best_stage, 'ms', b.best_ms, 'is_me', b.user_id = me)
+           'score', b.best_score, 'stage', b.best_stage, 'ms', b.best_ms, 'is_me', b.user_id = me,
+           'country', (select case when pc.country_hidden then null else pc.country end from public.profiles pc where pc.id = b.user_id))
            order by b.pos) filter (where b.pos <= lim or b.user_id = me), '[]'::jsonb),
          max(b.pos) filter (where b.user_id = me)
     into rows, my_pos

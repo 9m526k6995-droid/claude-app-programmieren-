@@ -13,6 +13,7 @@ import {
   SocialError,
   type ProfileCard,
 } from "./social";
+import { flag, countryName } from "./countries";
 import { avatarHtml, profileLink, shareLink, copyLink, memberSince, fileToAvatar, AvatarError } from "./profileKit";
 
 const errMsg = (e: unknown) => (e instanceof Error && e.message ? e.message : "Da ist etwas schiefgelaufen.");
@@ -31,7 +32,7 @@ function headHtml(p: ProfileCard, avatarSlot: string, title: string): string {
   const since = memberSince(p.member_since);
   return `<div class="pm-head pf-head" style="--lc:${l.color}">
       ${avatarSlot}
-      <h3>${title}</h3>
+      <h3>${p.country ? `<span class="flag" title="${esc(countryName(p.country))}">${flag(p.country)}</span> ` : ""}${title}</h3>
       ${leagueBadge(l)}
       ${since ? `<small class="muted pf-since">${esc(since)}${p.trophy_rounds ? ` · ${p.trophy_rounds} Trophäen-Runden` : ""}</small>` : ""}
       ${p.username ? `<div class="pf-clan" data-clan-for="${esc(p.username)}"></div>` : ""}

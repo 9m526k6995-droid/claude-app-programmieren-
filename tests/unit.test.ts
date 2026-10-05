@@ -399,3 +399,21 @@ test("Clan-Tab in der Navigation", () => {
   assert.equal(tabFor(["clan", "chat"]), "clan");
   assert.equal(tabFor(["clan", "c", "abc"]), "clan");
 });
+
+// ---------- Länder ----------
+import { flag, countryName, allCountries, searchCountries, isCountry, COUNTRY_COUNT, POPULAR } from "../src/countries";
+
+test("Länder: Flaggen, deutsche Namen, Suche", () => {
+  assert.equal(flag("DE"), "🇩🇪");
+  assert.equal(flag("NL"), "🇳🇱");
+  assert.equal(flag("xx1"), "");
+  assert.equal(countryName("DE"), "Deutschland");
+  assert.equal(countryName("NL"), "Niederlande");
+  assert.ok(COUNTRY_COUNT >= 240, `alle Länder (${COUNTRY_COUNT})`);
+  const all = allCountries();
+  assert.deepEqual(all.slice(0, POPULAR.length).map((c) => c.code), POPULAR, "Beliebte Länder zuerst");
+  assert.equal(new Set(all.map((c) => c.code)).size, all.length, "keine doppelten Länder");
+  assert.equal(searchCountries("osterreich")[0].code, "AT", "Suche ohne Umlaute");
+  assert.equal(searchCountries("nl")[0].code, "NL", "Suche nach Code");
+  assert.ok(isCountry("TR") && !isCountry("ZZ") && !isCountry(null));
+});

@@ -56,6 +56,7 @@ Ohne Supabase zeigt die App nur das Startmenü mit einem Hinweis, dass die Anmel
 6. Neue Query, Inhalt von `supabase/minigames.sql` einfügen → **Run**. (Minigames als Einzelspiele mit Rangliste pro Spiel.)
 7. Neue Query, Inhalt von `supabase/social.sql` einfügen → **Run**. (Badges für Freundesanfragen.)
 8. Neue Query, Inhalt von `supabase/clans.sql` einfügen → **Run**. (Highscores in Punkten und Clans. Muss nach `social.sql` laufen.)
+9. Neue Query, Inhalt von `supabase/regions.sql` einfügen → **Run**. (Land im Konto und Länder-Ranglisten.)
 
 ### 3. Anmeldung einstellen
 1. Links **Authentication** → **Sign In / Providers** → **Email**: muss **aktiviert** sein (Standard).

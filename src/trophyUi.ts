@@ -1,5 +1,6 @@
 // Trophäen-Bildschirme: Trophäenpfad, Liga-Aufstieg, Ergebnis, Weltrangliste, Spielerprofil, Spielername.
 
+import { flag, countryName } from "./countries";
 import { esc, modal } from "./ui";
 import { confetti } from "./fx";
 import {
@@ -409,7 +410,7 @@ function boardRow(p: PlayerInfo & { rank?: number }, me: boolean): string {
   const l = leagueById(p.league);
   return `<button class="row-item trow ${me ? "me" : ""}" data-player="${esc(p.username)}">
       <span class="rk">${["🥇", "🥈", "🥉"][rank - 1] ?? rank}</span>
-      <span class="nm">${esc(p.username)}${me ? " (du)" : ""}<small style="--lc:${l.color}">${l.emoji} ${l.name}</small></span>
+      <span class="nm">${p.country ? `<span class="flag" aria-label="${esc(countryName(p.country))}">${flag(p.country)}</span> ` : ""}${esc(p.username)}${me ? " (du)" : ""}<small style="--lc:${l.color}">${l.emoji} ${l.name}</small></span>
       <b>${formatTrophies(p.trophies)} <span aria-hidden="true">🏆</span></b>
     </button>`;
 }
@@ -417,16 +418,20 @@ function boardRow(p: PlayerInfo & { rank?: number }, me: boolean): string {
 export function renderWorldBoard(list: HTMLElement, b: TrophyBoard, opts: { onSetName: () => void }) {
   const me = b.me;
   const inTop = b.top.some((r) => r.is_me);
+  const region = b.country ?? null;
+  const myRank = region ? ((me as (PlayerInfo & { rank?: number }) | null)?.rank ?? null) : me?.world_rank;
   const summary = me
     ? `<div class="wr-me">
-        <div class="wr-rank"><span>Dein Weltrang</span><b>#${me.world_rank}</b><small>von ${formatTrophies(b.total)}</small></div>
+        <div class="wr-rank"><span>${region ? `Dein Rang in ${flag(region)} ${esc(countryName(region))}` : "Dein Weltrang"}</span><b>#${myRank}</b><small>von ${formatTrophies(b.total)}${region && me.world_rank ? ` · #${me.world_rank} weltweit` : ""}</small></div>
         <div class="wr-info">
           <b>${formatTrophies(me.trophies)} 🏆</b> ${leagueBadge(me.league)}
           ${b.above ? `<div class="muted">Vor dir: <b>${esc(b.above.username)}</b> · ${formatTrophies(b.above.trophies)}</div>` : `<div class="muted">Niemand vor dir 👑</div>`}
           ${b.below ? `<div class="muted">Hinter dir: <b>${esc(b.below.username)}</b> · ${formatTrophies(b.below.trophies)}</div>` : ""}
         </div>
       </div>`
-    : `<button class="name-banner" data-w="name"><b>Wähle deinen Spielernamen</b><span>Dann erscheinst du in der Weltrangliste →</span></button>`;
+    : region
+      ? `<div class="wr-note muted center">Du bist nicht in der Rangliste von ${flag(region)} ${esc(countryName(region))}.</div>`
+      : `<button class="name-banner" data-w="name"><b>Wähle deinen Spielernamen</b><span>Dann erscheinst du in der Weltrangliste →</span></button>`;
 
   const rows = b.top.map((r) => boardRow(r, r.is_me)).join("");
   const outside =
@@ -438,12 +443,16 @@ export function renderWorldBoard(list: HTMLElement, b: TrophyBoard, opts: { onSe
       : "";
   list.innerHTML =
     summary +
-    `<p class="wr-note muted">Sortiert nach Trophäen – die meisten stehen oben.</p>` +
-    (rows ? rows + outside : `<div class="empty">Noch niemand in der Rangliste. Spiel den Trophäen-Modus und sei die/der Erste!</div>`);
+    `<p class="wr-note muted">${region ? `${flag(region)} ${esc(countryName(region))} · ` : "Weltweit · "}sortiert nach Trophäen – die meisten stehen oben.</p>` +
+    (rows
+      ? rows + outside
+      : region
+        ? `<div class="empty">In ${flag(region)} ${esc(countryName(region))} ist noch niemand in der Rangliste.</div>`
+        : `<div class="empty">Noch niemand in der Rangliste. Spiel den Trophäen-Modus und sei die/der Erste!</div>`);
 
   list.querySelector('[data-w="name"]')?.addEventListener("click", opts.onSetName);
   const all = new Map<string, PlayerInfo>();
-  [...b.top, b.me, b.above, b.below].forEach((p) => p && all.set(p.username, { ...p, world_rank: "rank" in p ? (p as { rank: number }).rank : p.world_rank }));
+  [...b.top, b.me, b.above, b.below].forEach((p) => p && all.set(p.username, { ...p, world_rank: p.world_rank ?? (p as { rank?: number }).rank }));
   list.querySelectorAll<HTMLElement>("[data-player]").forEach((el) =>
     el.addEventListener("click", () => {
       const p = all.get(el.dataset.player!);

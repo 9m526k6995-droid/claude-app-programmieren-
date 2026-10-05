@@ -5081,3 +5081,67 @@ html {
   overflow: hidden;
   text-overflow: ellipsis;
 }
+
+/* ===================== Länder ===================== */
+.region-chips {
+  margin-top: 10px;
+}
+.mg-region .region-chips {
+  margin: 0 -16px 8px;
+}
+.flag {
+  font-size: 1.05em;
+}
+.country-hint {
+  margin-top: 10px;
+}
+.country-list {
+  display: grid;
+  gap: 4px;
+  max-height: 52dvh;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+}
+.country-opt {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 10px 12px;
+  border-radius: 12px;
+  font-size: 20px;
+  text-align: left;
+}
+.country-opt span {
+  font-size: 16px;
+  font-weight: 700;
+}
+.country-opt.on {
+  background: rgba(198, 255, 61, 0.14);
+  box-shadow: inset 0 0 0 2px var(--lime);
+}
+.country-current {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  width: 100%;
+  padding: 12px 14px;
+  border-radius: 16px;
+  background: var(--ink);
+  box-shadow: inset 0 0 0 2px var(--ink-3);
+  text-align: left;
+}
+.country-current[aria-disabled="true"] {
+  opacity: 0.75;
+}
+.country-current small {
+  display: block;
+  font-size: 12px;
+  color: var(--muted);
+  font-weight: 700;
+}
+.country-flag {
+  font-size: 34px;
+}
+.country-lock {
+  margin: 8px 0;
+}
