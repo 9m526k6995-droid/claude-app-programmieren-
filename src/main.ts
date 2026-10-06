@@ -356,6 +356,8 @@ async function ensureTerms() {
       if (pending) t = await acceptTerms(pending.age, pending.parentOk).catch(() => t);
     }
     myTerms = t;
+    // Profil schon offen, bevor die Rechte geladen waren → Admin-Link nachreichen
+    if (t.is_admin && routeParts()[0] === "profil" && !document.querySelector('a[href="#/admin"]') && !document.querySelector(".modal-bg")) renderRoute();
     if (!t.accepted)
       openTermsGate((nt) => {
         myTerms = nt;
