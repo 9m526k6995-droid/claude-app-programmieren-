@@ -985,6 +985,7 @@ export async function openClanInvite(code: string, h: Pick<ClanHandlers, "hasNam
       </div>
     </div>`,
     (el, close) => {
+      el.parentElement!.dataset.keep = "1";
       el.querySelector('[data-ci="mine"]')?.addEventListener("click", () => {
         close();
         h.go("clan");

@@ -6,6 +6,10 @@
 -- ---------------------------------------------------------------------
 alter table public.clans add column if not exists invite_code text;
 create unique index if not exists clans_invite_code_unique on public.clans (invite_code) where invite_code is not null;
+-- Die Sicht auf aktive Clans neu anlegen, damit sie die neue Spalte enthält
+create or replace view public.zwip_clans with (security_invoker = true) as
+  select * from public.clans where dissolved_at is null;
+revoke all on public.zwip_clans from public, anon, authenticated;
 
 -- 8 Zeichen ohne verwechselbare Zeichen (kein 0/O, 1/I/L)
 create or replace function public.zwip_new_invite_code()

@@ -389,7 +389,8 @@ function legalScreen(page: string | undefined) {
 function renderRoute() {
   clearTimers();
   running = false;
-  document.querySelectorAll(".modal-bg").forEach((m) => m.remove());
+  // Fenster schließen – außer solche, die einen Seitenwechsel überleben sollen (z. B. Clan-Einladung nach der Anmeldung)
+  document.querySelectorAll(".modal-bg:not([data-keep])").forEach((m) => m.remove());
   const parts = routeParts();
   if (parts[0] !== "pfad") lastRoute = parts.join("/");
   window.scrollTo(0, 0);
