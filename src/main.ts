@@ -339,8 +339,12 @@ function navigate(path: string) {
 /** Seitengerüst mit Kopfzeile und Tab-Leiste zeichnen, liefert den Inhaltsbereich. */
 function shell(tab: TabId | null, title: string, body: string, opts: { back?: string; titleHtml?: string; cls?: string } = {}): HTMLElement {
   clearTimers();
-  app.innerHTML = shellHtml({ tab, title, flame: myTrophyLabel(), body: (isGuest() ? guestBannerHtml() : noticeHtml(myTerms)) + body, ...opts });
-  return document.getElementById("page")!;
+  app.innerHTML = shellHtml({ tab, title, flame: myTrophyLabel(), body, ...opts });
+  const page = document.getElementById("page")!;
+  // Hinweis (Gast, Sperre, Verwarnung) über dem Inhalt – Seiten, die später nachladen, überschreiben ihn so nicht
+  const notice = isGuest() ? guestBannerHtml() : noticeHtml(myTerms);
+  if (notice) page.insertAdjacentHTML("beforebegin", notice);
+  return page;
 }
 
 // ---------- Nutzungsbedingungen, Alter, Sperren ----------
