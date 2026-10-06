@@ -66,6 +66,8 @@ const options = {
   // Normaler Build: app-<hash>.js, damit Browser/CDN nie eine alte Version zeigen
   entryNames: single || serve ? "[name]" : "[name]-[hash]",
   metafile: true,
+  // Schrift liegt in public/fonts und wird unverändert mitkopiert
+  external: ["fonts/*"],
   write: !single,
   logLevel: "info",
   define: {

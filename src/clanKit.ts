@@ -91,3 +91,34 @@ export function chatTime(iso: string, now = Date.now()): string {
   if (diff < 86400 && new Date(now).getDate() === d.getDate()) return hm;
   return `${d.toLocaleDateString("de-DE", { weekday: "short" })} ${hm}`;
 }
+
+/** Clan-Ligen: XP pro aktivem Mitglied in der Woche (fair für kleine und große Clans) */
+export const CLAN_LEAGUES: { id: string; name: string; emoji: string; color: string; min: number }[] = [
+  { id: "bronze", name: "Bronze", emoji: "🥉", color: "#cd7f45", min: 0 },
+  { id: "silver", name: "Silber", emoji: "🥈", color: "#c9d1db", min: 5_000 },
+  { id: "gold", name: "Gold", emoji: "🥇", color: "#ffd23d", min: 15_000 },
+  { id: "platinum", name: "Platin", emoji: "💠", color: "#7fe7e0", min: 40_000 },
+  { id: "diamond", name: "Diamant", emoji: "💎", color: "#7fb2ff", min: 100_000 },
+  { id: "champion", name: "Champion", emoji: "👑", color: "#ff3d8b", min: 250_000 },
+];
+
+export function clanLeague(id: string) {
+  return CLAN_LEAGUES.find((l) => l.id === id) ?? CLAN_LEAGUES[0];
+}
+
+/** Die passende Liga für einen Wert (XP pro aktivem Mitglied) – gleiche Grenzen wie auf dem Server */
+export function clanLeagueFor(perMember: number) {
+  return [...CLAN_LEAGUES].reverse().find((l) => perMember >= l.min) ?? CLAN_LEAGUES[0];
+}
+
+/** Link zum Clan-Beitritt */
+export function clanInviteUrl(base: string, code: string): string {
+  try {
+    const u = new URL(base);
+    u.hash = "";
+    u.search = `?clan=${encodeURIComponent(code)}`;
+    return u.toString();
+  } catch {
+    return `${base.split(/[?#]/)[0]}?clan=${encodeURIComponent(code)}`;
+  }
+}

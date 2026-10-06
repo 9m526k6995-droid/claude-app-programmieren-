@@ -26,13 +26,18 @@ import {
   hideClanMessage,
   muteClanMember,
   getFriends,
+  getClanInvite,
+  resetClanInvite,
+  clanByInvite,
+  joinClanByInvite,
+  getClanLeague,
   SocialError,
   type MyClan,
   type ClanInfo,
   type ClanMessage,
   type JoinMode,
 } from "./social";
-import { EMBLEMS, COLORS, FRAMES, QUICK_MESSAGES, JOIN_MODES, CLAN_MAX, emblemHtml, joinModeLabel, nextRewards, chatTime } from "./clanKit";
+import { EMBLEMS, COLORS, FRAMES, QUICK_MESSAGES, JOIN_MODES, CLAN_MAX, emblemHtml, joinModeLabel, nextRewards, chatTime, clanLeague, clanLeagueFor, clanInviteUrl, CLAN_LEAGUES } from "./clanKit";
 
 export interface ClanHandlers {
   hasName: () => boolean;
@@ -46,6 +51,10 @@ export interface ClanHandlers {
   every: (ms: number, fn: () => void) => void;
   /** Badges neu laden (z. B. nach dem Lesen des Chats) */
   refreshBadges: () => void;
+  /** Öffentliche Basis-Adresse der App (für Einladungslinks) */
+  publicBase: () => string;
+  /** Text teilen (Teilen-Menü oder Zwischenablage) */
+  share: (text: string) => Promise<void>;
 }
 
 const errMsg = (e: unknown) => (e instanceof SocialError ? e.message : "Da ist etwas schiefgelaufen.");
@@ -415,6 +424,7 @@ function renderOverview(body: HTMLElement, d: MyClan, h: ClanHandlers) {
       <a class="btn primary" href="#/minigames">🎮 XP sammeln</a>
     </section>
     <p class="muted small center">Jeder Punkt aus einem Minigame wird 1:1 zu Clan-XP.</p>
+    <section id="clan-league" class="clan-league" aria-live="polite"></section>
     ${
       ch
         ? `<section><div class="board-head"><h2 class="sec-title">Wochen-Challenges</h2><span class="pill">noch ${daysLeft} ${daysLeft === 1 ? "Tag" : "Tage"}</span></div>
@@ -449,6 +459,7 @@ function renderOverview(body: HTMLElement, d: MyClan, h: ClanHandlers) {
     }
     <a class="btn ghost" href="#/ranglisten/clans">🏆 Clan-Rangliste ansehen</a>`;
 
+  void mountLeague(body.querySelector<HTMLElement>("#clan-league")!);
   const contrib = body.querySelector<HTMLElement>("#contrib")!;
   const load = async (per: string) => {
     contrib.innerHTML = `<div class="empty">Lädt…</div>`;
@@ -641,6 +652,11 @@ function renderMembers(body: HTMLElement, d: MyClan, h: ClanHandlers) {
       <h2 class="sec-title"><label for="inv-name">Spieler einladen</label></h2>
       <form class="inv-form" id="inv-form"><input id="inv-name" placeholder="Spielername" autocomplete="off" autocapitalize="off" spellcheck="false" maxlength="16"><button class="btn primary" type="submit">Einladen</button></form>
       <div id="inv-friends"></div>
+      <div class="inv-link" id="inv-link">
+        <p class="field-label">Oder per Link – wer ihn öffnet, kann direkt beitreten</p>
+        <div class="row"><button class="btn sm primary" type="button" data-c="link-share">🔗 Einladungslink teilen</button>${leader ? `<button class="btn sm ghost" type="button" data-c="link-reset">Neuer Link</button>` : ""}</div>
+        <p class="muted small" id="inv-link-url"></p>
+      </div>
     </section>
     ${
       leader && d.requests?.length
@@ -728,6 +744,25 @@ function renderMembers(body: HTMLElement, d: MyClan, h: ClanHandlers) {
           return h.rerender();
         case "manage":
           return openManage(name, members.find((m) => m.username === name)?.muted ?? false, h);
+        case "link-share": {
+          const inv = await getClanInvite();
+          const url = clanInviteUrl(h.publicBase(), inv.code);
+          body.querySelector("#inv-link-url")!.textContent = url;
+          await h.share(`Komm in meinen ZWIP-Clan „${d.clan!.name}“ 🛡️ ${url}`);
+          return;
+        }
+        case "link-reset":
+          return confirmTap(b, "Sicher? Alter Link geht dann nicht mehr", async () => {
+            try {
+              const inv = await resetClanInvite();
+              body.querySelector("#inv-link-url")!.textContent = clanInviteUrl(h.publicBase(), inv.code);
+              toast("Neuer Link erstellt – der alte gilt nicht mehr 🔒");
+              b.textContent = "Neuer Link";
+              delete b.dataset.armed;
+            } catch (ex) {
+              toast(errMsg(ex));
+            }
+          });
       }
     } catch (ex) {
       toast(errMsg(ex));
@@ -869,4 +904,110 @@ export async function renderClanBoard(list: HTMLElement, period: string, h: Pick
   } catch (e) {
     if (list.isConnected) list.innerHTML = `<div class="inline-error" role="alert">${esc(errMsg(e))}</div>`;
   }
+}
+
+// =====================================================================
+// Clan-Liga (XP pro aktivem Mitglied)
+// =====================================================================
+
+async function mountLeague(box: HTMLElement) {
+  try {
+    const lg = await getClanLeague();
+    if (!box.isConnected) return;
+    const cur = clanLeague(lg.league);
+    const next = clanLeague(lg.next_league);
+    const idx = CLAN_LEAGUES.findIndex((l) => l.id === cur.id);
+    const up = CLAN_LEAGUES[idx + 1];
+    const trend =
+      next.id === cur.id
+        ? up
+          ? `Noch <b>${fmtScore(Math.max(0, up.min - lg.per_member))} XP pro Mitglied</b> bis ${up.emoji} ${up.name}`
+          : "Ihr seid ganz oben 🔥"
+        : CLAN_LEAGUES.findIndex((l) => l.id === next.id) > idx
+          ? `Auf Kurs: nächste Woche ${next.emoji} <b>${next.name}</b> 🚀`
+          : `Achtung: nächste Woche droht ${next.emoji} ${next.name}`;
+    box.innerHTML = `<button class="league-card" type="button" style="--lc:${cur.color}">
+        <span class="league-emo" aria-hidden="true">${cur.emoji}</span>
+        <span class="league-txt"><small>Clan-Liga diese Woche</small><b>${cur.name}-Liga · Platz ${lg.my_rank} von ${lg.clans_in_league}</b>
+        <small>${fmtScore(lg.per_member)} XP pro aktivem Mitglied (${lg.active} aktiv) · ${trend}</small></span>
+        <i class="mc-go" aria-hidden="true">›</i>
+      </button>`;
+    box.querySelector("button")!.addEventListener("click", () => openLeagueTable(lg));
+  } catch {
+    box.innerHTML = "";
+  }
+}
+
+function openLeagueTable(lg: Awaited<ReturnType<typeof getClanLeague>>) {
+  const cur = clanLeague(lg.league);
+  modal(
+    `<h2 class="modal-title">${cur.emoji} ${cur.name}-Liga</h2>
+     <p class="muted small">Gezählt werden die XP pro aktivem Mitglied in dieser Woche – so haben kleine und große Clans die gleiche Chance. Am Montag geht es je nach Wert auf oder ab.</p>
+     <div class="list league-list">${lg.rows
+       .map((r) => {
+         const tgt = clanLeagueFor(r.per_member);
+         return `<div class="row-item ${r.is_mine ? "me" : ""}"><span class="rk">${["🥇", "🥈", "🥉"][r.rank - 1] ?? r.rank}</span>${emblemHtml(r, "s")}<span class="nm">${esc(r.name)}<small>👥 ${r.active} aktiv · Level ${r.level}${tgt.id !== cur.id ? ` · → ${tgt.emoji}` : ""}</small></span><b class="score-cell">${fmtScore(r.per_member)}<small>XP/Kopf</small></b></div>`;
+       })
+       .join("")}</div>
+     <p class="muted small">Ligen: ${CLAN_LEAGUES.map((l) => `${l.emoji} ${l.name} ab ${fmtScore(l.min)}`).join(" · ")}</p>
+     <div class="modal-actions"><button class="btn primary" type="button" data-close>Schließen</button></div>`,
+  );
+}
+
+// =====================================================================
+// Beitritt über Einladungslink (?clan=CODE)
+// =====================================================================
+
+export async function openClanInvite(code: string, h: Pick<ClanHandlers, "hasName" | "askName" | "go">) {
+  let c: Awaited<ReturnType<typeof clanByInvite>>;
+  try {
+    c = await clanByInvite(code);
+  } catch (e) {
+    toast(errMsg(e));
+    return;
+  }
+  if (c.in_this_clan) {
+    toast(`Du bist schon im Clan „${c.name}“ 🛡️`);
+    h.go("clan");
+    return;
+  }
+  modal(
+    `<div class="clan-invite">
+      ${emblemHtml(c, "l")}
+      <h2 class="modal-title">Einladung in „${esc(c.name)}“</h2>
+      <p class="muted">Level ${c.level} · 👥 ${c.members}/${c.max_members}${c.leader ? ` · 👑 ${esc(c.leader)}` : ""}</p>
+      ${c.description ? `<p>${esc(c.description)}</p>` : ""}
+      ${c.in_a_clan ? `<p class="notice warn">Du bist schon in einem anderen Clan. Verlass ihn zuerst, wenn du wechseln willst.</p>` : ""}
+      <div class="inline-error" id="ci-err" role="alert" hidden></div>
+      <div class="modal-actions">
+        ${c.in_a_clan ? `<button class="btn primary" type="button" data-ci="mine">Zu meinem Clan</button>` : `<button class="btn primary" type="button" data-ci="join">Beitreten 🛡️</button>`}
+        <button class="btn ghost" type="button" data-close>Später</button>
+      </div>
+    </div>`,
+    (el, close) => {
+      el.querySelector('[data-ci="mine"]')?.addEventListener("click", () => {
+        close();
+        h.go("clan");
+      });
+      const join = el.querySelector<HTMLButtonElement>('[data-ci="join"]');
+      join?.addEventListener("click", () => {
+        const go = async () => {
+          join.disabled = true;
+          try {
+            await joinClanByInvite(code);
+            close();
+            toast(`Willkommen bei „${c.name}“ 🎉`);
+            h.go("clan");
+          } catch (e) {
+            const err = el.querySelector<HTMLElement>("#ci-err")!;
+            err.textContent = errMsg(e);
+            err.hidden = false;
+            join.disabled = false;
+          }
+        };
+        if (h.hasName()) void go();
+        else h.askName(() => void go());
+      });
+    },
+  );
 }

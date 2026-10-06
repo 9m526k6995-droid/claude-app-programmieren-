@@ -57,6 +57,16 @@ Ohne Supabase zeigt die App nur das Startmenü mit einem Hinweis, dass die Anmel
 7. Neue Query, Inhalt von `supabase/social.sql` einfügen → **Run**. (Badges für Freundesanfragen.)
 8. Neue Query, Inhalt von `supabase/clans.sql` einfügen → **Run**. (Highscores in Punkten und Clans. Muss nach `social.sql` laufen.)
 9. Neue Query, Inhalt von `supabase/regions.sql` einfügen → **Run**. (Land im Konto und Länder-Ranglisten.)
+10. Neue Query, Inhalt von `supabase/moderation.sql` einfügen → **Run**. (Alter + Zustimmung, Melden, Sperren, Anti-Cheat, Admin-Seite, Daten-Export. Der Admin steht in der Tabelle `zwip_admins` – E-Mail dort eintragen.)
+11. **Edge Functions** → neue Funktion `delete-account` mit dem Inhalt von `supabase/functions/delete-account/index.ts` anlegen („Verify JWT“ an). Damit können Spieler ihr Konto selbst löschen.
+12. Neue Query, Inhalt von `supabase/clanplus.sql` einfügen → **Run**. (Clan-Einladungslinks und Clan-Ligen.)
+13. **Push-Erinnerungen** (optional):
+    - `supabase/push.sql` ausführen.
+    - VAPID-Schlüssel erzeugen, z. B. mit `npx web-push generate-vapid-keys`, und mit einem langen Zufalls-Passwort eintragen:
+      `insert into public.zwip_secrets (key, value) values ('vapid_public', '…'), ('vapid_private', '…'), ('vapid_subject', 'mailto:deine@mail.de'), ('cron', 'langes-zufallspasswort');`
+      Die Schlüssel gehören **nicht** ins Repo – nur in diese Tabelle (nur für den Server lesbar).
+    - Edge Function `push-send` aus `supabase/functions/push-send/index.ts` anlegen, **„Verify JWT“ aus** (sie prüft das Cron-Passwort selbst).
+    - `supabase/push-cron.sql` ausführen (vorher `DEIN-PROJEKT` ersetzen). Danach prüft der Server stündlich, wer erinnert werden soll: höchstens 2-mal am Tag, nie zwischen 22 und 8 Uhr, nur wenn die Daily noch fehlt.
 
 ### 3. Anmeldung einstellen
 1. Links **Authentication** → **Sign In / Providers** → **Email**: muss **aktiviert** sein (Standard).
@@ -119,8 +129,7 @@ Die Variablen werden beim Build in die App geschrieben. Nach einer Änderung als
 
 - [ ] Eigene Domain verbinden (bei allen Hostern kostenlos möglich)
 - [ ] `ZWIP_PUBLIC_URL` auf die finale Adresse setzen, damit Duell-Links stimmen
-- [ ] Impressum und Datenschutzerklärung ergänzen (Pflicht in Deutschland)
+- [ ] **Platzhalter in `src/legal.ts` (`OPERATOR`) mit echtem Namen, Anschrift und E-Mail füllen** – Impressum, Datenschutz und Nutzungsbedingungen sind schon eingebaut, aber eine Vorlage, keine Rechtsberatung
 - [ ] Markenrecherche für den Namen „ZWIP“ (DPMA/EUIPO) – es gibt bereits Firmen mit ähnlichem Namen
-- [ ] Bei Online-Bestenliste: Namensfilter gegen Beleidigungen einbauen
 - [ ] Supabase: „Confirm email“ an, eigener SMTP-Mailversand eingerichtet
-- [ ] Datenschutzerklärung um Account-Daten (E-Mail) und Supabase als Auftragsverarbeiter ergänzen
+- [ ] Mit Supabase den Auftragsverarbeitungsvertrag (DPA) abschließen (im Dashboard unter Organization → Legal)

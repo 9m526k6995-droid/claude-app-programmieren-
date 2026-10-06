@@ -24,6 +24,7 @@ function psql(sql, db = DB) {
   const r = spawnSync("psql", [`${PG} dbname=${db}`, "-At", "-v", "ON_ERROR_STOP=1", "-c", sql], { encoding: "utf8" });
   return { ok: r.status === 0, out: r.stdout, err: r.stderr };
 }
+const dbVal = (sql) => psql(sql).out.trim();
 function psqlFile(file, db = DB) {
   const r = spawnSync("psql", [`${PG} dbname=${db}`, "-q", "-v", "ON_ERROR_STOP=1", "-f", file], { encoding: "utf8" });
   if (r.status !== 0) throw new Error(`SQL-Fehler in ${file}:\n${r.stderr}`);
@@ -35,7 +36,7 @@ function psqlFile(file, db = DB) {
     process.exit(1);
   }
   psql(`create database ${DB}`, "postgres");
-  for (const f of ["tests/sql/supabase-shim.sql", "supabase/profiles.sql", "supabase/schema.sql", "supabase/trophies.sql", "supabase/profile.sql", "supabase/minigames.sql", "supabase/social.sql", "supabase/clans.sql", "supabase/regions.sql"]) psqlFile(f);
+  for (const f of ["tests/sql/supabase-shim.sql", "supabase/profiles.sql", "supabase/schema.sql", "supabase/trophies.sql", "supabase/profile.sql", "supabase/minigames.sql", "supabase/social.sql", "supabase/clans.sql", "supabase/regions.sql", "supabase/moderation.sql", "supabase/clanplus.sql"]) psqlFile(f);
 }
 const lit = (v) =>
   v === null || v === undefined
@@ -153,6 +154,15 @@ async function handleApi(req, res, url) {
     const u = mock.access.get((req.headers.authorization || "").replace("Bearer ", ""));
     return u ? json(res, 200, { id: u.id, email: u.email }) : json(res, 401, { code: 401, msg: "invalid JWT" });
   }
+  // Edge Function „delete-account“ nachgebaut: Clan verlassen, dann Konto löschen
+  if (p === "/functions/v1/delete-account" && req.method === "POST") {
+    const u = mock.access.get((req.headers.authorization || "").replace("Bearer ", ""));
+    if (!u) return json(res, 401, { error: "not_authenticated" });
+    psql(`select public.zwip_prepare_delete('${u.id}'); delete from auth.users where id = '${u.id}';`);
+    mock.users.delete(u.email);
+    mock.deleted = (mock.deleted || 0) + 1;
+    return json(res, 200, { deleted: true });
+  }
   if (p.startsWith("/rest/v1/rpc/") && req.method === "POST") {
     const user = mock.access.get((req.headers.authorization || "").replace("Bearer ", ""));
     const r = rpcCall(p.slice("/rest/v1/rpc/".length), await readBody(req), user);
@@ -173,7 +183,7 @@ async function handleApi(req, res, url) {
 const types = { ".html": "text/html", ".js": "text/javascript", ".css": "text/css", ".svg": "image/svg+xml", ".webmanifest": "application/manifest+json" };
 const server = http.createServer((req, res) => {
   const url = new URL(req.url, "http://x");
-  if (/^\/(auth|rest)\/v1\/|^\/__mock\//.test(url.pathname)) return void handleApi(req, res, url).catch((e) => json(res, 500, { msg: String(e) }));
+  if (/^\/(auth|rest|functions)\/v1\/|^\/__mock\//.test(url.pathname)) return void handleApi(req, res, url).catch((e) => json(res, 500, { msg: String(e) }));
   const p = decodeURIComponent(url.pathname);
   let f = path.join(DIST, p === "/" ? "index.html" : p);
   if (!fs.existsSync(f)) f = path.join(DIST, "index.html");
@@ -202,8 +212,10 @@ const check = (cond, msg) => {
   if (!cond) failures++;
 };
 
-async function newPage() {
+async function newPage({ tour = false } = {}) {
   const ctx = await browser.newContext({ ...devices["iPhone 13"], hasTouch: true });
+  // Die Einführung beim ersten Öffnen wird nur im eigenen Test gezeigt
+  if (!tour) await ctx.addInitScript(() => localStorage.setItem("zwip:tour", "1"));
   await ctx.route(/fonts\.(googleapis|gstatic)\.com/, (r) => r.abort());
   await ctx.grantPermissions(["clipboard-read", "clipboard-write"], { origin: BASE }).catch(() => {});
   const page = await ctx.newPage();
@@ -224,10 +236,15 @@ async function openSettings(page) {
   await page.waitForSelector('[data-pf="logout"]');
 }
 
-async function fillAuth(page, email, pw, pw2) {
+async function fillAuth(page, email, pw, pw2, age = 20) {
   await page.fill("#auth-email", email);
   await page.fill("#auth-password", pw);
-  if (pw2 !== undefined) await page.fill("#auth-password2", pw2);
+  if (pw2 !== undefined) {
+    await page.fill("#auth-password2", pw2);
+    await page.fill("#auth-age", String(age));
+    if (age < 16) await page.check("#auth-parent", { force: true });
+    await page.check("#auth-terms", { force: true });
+  }
   await page.click("#auth-submit", { force: true });
 }
 
@@ -532,10 +549,23 @@ try {
   await fillAuth(A.page, "lena@test.de", "kurz", "kurz");
   check((await authError(A.page)).includes("mindestens 8"), "Zu kurzes Passwort wird gemeldet");
   await A.page.screenshot({ path: `${SHOTS}/0-register-error.png` });
+  // Alter und Zustimmung
+  await A.page.fill("#auth-age", "12");
+  await A.page.uncheck("#auth-parent", { force: true }).catch(() => {});
+  await A.page.click("#auth-submit", { force: true });
+  check((await authError(A.page)).includes("Eltern"), "Unter 16 ohne Eltern-Häkchen geht nicht");
+  check(await A.page.isVisible("#auth-parent-row"), "Eltern-Häkchen erscheint bei Alter unter 16");
+  await A.page.fill("#auth-age", "20");
+  await A.page.uncheck("#auth-terms", { force: true });
+  await A.page.click("#auth-submit", { force: true });
+  check((await authError(A.page)).includes("Nutzungsbedingungen"), "Ohne Zustimmung keine Registrierung");
   await fillAuth(A.page, "Lena@Test.de ", "geheim123", "geheim123");
   await A.page.waitForSelector('[data-act="daily"]', { timeout: 5000 });
   check(true, "Nach Registrierung direkt eingeloggt im Hauptmenü");
   check(mock.users.has("lena@test.de"), "Account wurde beim Auth-Server angelegt (E-Mail normalisiert)");
+  await A.page.waitForFunction(() => true);
+  for (let i = 0; i < 20 && dbVal("select count(*) from public.profiles p join auth.users u on u.id = p.id where u.email = 'lena@test.de' and p.terms_accepted_at is not null") !== "1"; i++) await A.page.waitForTimeout(150);
+  check(dbVal("select count(*) from public.profiles p join auth.users u on u.id = p.id where u.email = 'lena@test.de' and p.terms_accepted_at is not null and p.birth_year is not null") === "1", "Alter und Zustimmung beim Server gespeichert");
 
   // 3) Sitzung bleibt nach Neuladen erhalten
   await A.page.reload();
@@ -856,7 +886,6 @@ try {
   check(!(await B.page.locator('[data-act="settings"]').count()), "Kein extra Einstellungs-Popup mehr");
 
   // ================= TROPHÄEN =================
-  const dbVal = (sql) => psql(sql).out.trim();
   const tP = A.page;
   await tP.goto(`${BASE}?e2e=1`);
   await tP.waitForSelector('.trophy-pill, [data-auth="login"]');
@@ -1344,6 +1373,15 @@ try {
   await fB.waitForSelector(".mg-res-clan", { timeout: 10000 });
   const clanXp = Number(dbVal("select xp from public.clans"));
   check(clanXp >= 225 && (await fB.textContent(".mg-res-clan")).includes("XP"), `Minigame-Punkte gehen an den Clan (${clanXp} XP)`);
+  await fB.goto(`${BASE}?e2e=1#/clan`);
+  await fB.waitForSelector(".league-card", { timeout: 8000 }).then(() => check(true, "Clan-Liga in der Übersicht"), () => check(false, "Clan-Liga in der Übersicht"));
+  check((await fB.textContent(".league-card")).includes("pro aktivem Mitglied"), "Liga zählt XP pro aktivem Mitglied");
+  await fB.click(".league-card", { force: true });
+  await fB.waitForSelector(".league-list .row-item");
+  check((await fB.textContent(".league-list")).includes("Blitz Crew"), "Liga-Tabelle zeigt den eigenen Clan");
+  await fB.screenshot({ path: `${SHOTS}/c3b-liga.png` });
+  await fB.click(".modal [data-close]", { force: true });
+  check((await fB.textContent(".chal-list")).includes("10.000 Punkte"), "Challenges passen zur Clan-Größe (kleiner Clan → 10.000 Punkte)");
 
   // Chat: Filter und Schnellnachricht
   await fB.goto(`${BASE}?e2e=1#/clan/chat`);
@@ -1396,6 +1434,26 @@ try {
   check(true, "Leiterin sieht die Clan-Einstellungen");
   await tP.screenshot({ path: `${SHOTS}/c7-settings.png`, fullPage: true });
 
+  // Einladungslink
+  await tP.goto(`${BASE}?e2e=1#/clan/mitglieder`);
+  await tP.waitForSelector('[data-c="link-share"]');
+  await tP.click('[data-c="link-share"]', { force: true });
+  await tP.waitForFunction(() => document.querySelector("#inv-link-url")?.textContent.includes("?clan="), null, { timeout: 6000 });
+  const inviteUrl = (await tP.textContent("#inv-link-url")).trim();
+  check(/\?clan=[A-Z2-9]{8}$/.test(inviteUrl), "Einladungslink mit Code");
+  const inviteClip = await tP.evaluate(() => navigator.clipboard.readText().catch(() => ""));
+  check(inviteClip.includes(inviteUrl), "Link wird zum Teilen kopiert");
+  const J = await newPage();
+  await J.page.goto(inviteUrl.replace(/^https?:\/\/[^/?#]+\/?/, `${BASE}`).replace("?clan=", "?e2e=1&clan="));
+  await J.page.waitForSelector(".duel-card");
+  check((await J.page.textContent(".duel-card")).includes("Clan"), "Clan-Link ohne Konto: Hinweis im Startmenü");
+  await J.page.click('[data-auth="register"]', { force: true });
+  await fillAuth(J.page, "jana@test.de", "geheim123", "geheim123", 18);
+  await J.page.waitForSelector(".clan-invite", { timeout: 10000 }).then(() => check(true, "Nach der Registrierung: Einladung in den Clan"), () => check(false, "Nach der Registrierung: Einladung in den Clan"));
+  check((await J.page.textContent(".clan-invite")).includes("Blitz Crew"), "Einladung zeigt den richtigen Clan");
+  await J.page.screenshot({ path: `${SHOTS}/c8-invite-link.png` });
+  await J.ctx.close();
+
   // ================= LÄNDER =================
   await tP.goto(`${BASE}?e2e=1#/ranglisten/welt`);
   await tP.waitForSelector("[data-country-hint]", { timeout: 8000 });
@@ -1445,10 +1503,140 @@ try {
   check((await tP.textContent("#mg-board")).includes("Lena"), "Minigame-Rangliste nach Land");
   await tP.screenshot({ path: `${SHOTS}/l3-minigame-de.png` });
 
+  // ================= RECHTLICHES, MELDEN, ADMIN, KONTO =================
+  // Rechtliches ohne Anmeldung
+  const L = await newPage();
+  await L.page.goto(`${BASE}?e2e=1`);
+  await L.page.waitForSelector(".start-legal a");
+  await L.page.click('.start-legal a[href="#/rechtliches/impressum"]', { force: true });
+  await L.page.waitForSelector(".legal h2");
+  check((await L.page.textContent(".legal")).includes("§ 5"), "Impressum ohne Anmeldung erreichbar");
+  check((await L.page.locator("mark.ph").count()) > 0, "Platzhalter im Impressum sind markiert");
+  await L.page.click('.legal-nav a[href="#/rechtliches/datenschutz"]', { force: true });
+  await L.page.waitForFunction(() => document.querySelector(".legal h2")?.textContent.includes("Datenschutz"));
+  check((await L.page.textContent(".legal")).includes("Supabase"), "Datenschutzerklärung nennt die Dienste");
+  await L.page.screenshot({ path: `${SHOTS}/r1-datenschutz.png`, fullPage: true });
+  await L.page.click('[data-act="legal-back"]', { force: true });
+  await L.page.waitForSelector('[data-auth="register"]');
+  check(true, "Zurück zum Startmenü");
+
+  // Gast-Modus + Einführung
+  const G = await newPage({ tour: true });
+  await G.page.goto(`${BASE}?e2e=1`);
+  await G.page.waitForSelector('[data-auth="guest"]');
+  await G.page.click('[data-auth="guest"]', { force: true });
+  await G.page.waitForSelector(".tour");
+  check(true, "Einführung erscheint beim ersten Öffnen");
+  await G.page.screenshot({ path: `${SHOTS}/g0-tour.png` });
+  for (let i = 0; i < 4; i++) await G.page.click('[data-tour="next"]', { force: true });
+  await G.page.waitForSelector(".tour", { state: "detached" });
+  check(await G.page.evaluate(() => localStorage.getItem("zwip:tour") === "1"), "Einführung wird nur einmal gezeigt");
+  check(await G.page.locator(".notice.guest").isVisible(), "Gast sieht den Gast-Hinweis");
+  check(await G.page.locator('[data-act="daily"]').isVisible(), "Gast kann die Daily spielen");
+  await G.page.click('[data-tab="clan"]', { force: true });
+  await G.page.waitForSelector(".guest-wall");
+  check((await G.page.textContent(".guest-wall")).includes("Konto"), "Clans brauchen ein Konto");
+  await G.page.goto(`${BASE}?e2e=1#/minigames/memory`);
+  await G.page.waitForSelector("#mg-board .guest-wall");
+  check(await G.page.locator('[data-act="mgplay"]').count() > 0, "Gast kann Minigames spielen, Rangliste ist gesperrt");
+  await G.page.click('[data-tab="profil"]', { force: true });
+  await G.page.waitForSelector("#set-vibrate");
+  check(true, "Vibration lässt sich in den Einstellungen umschalten");
+  await G.page.screenshot({ path: `${SHOTS}/g1-gast-profil.png`, fullPage: true });
+  await G.page.reload();
+  await G.page.waitForSelector(".notice.guest");
+  check((await G.page.locator(".tour").count()) === 0, "Gast-Modus bleibt nach Neuladen, ohne erneute Einführung");
+  await G.page.click('.guest-wall [data-act="guest-register"], .notice.guest [data-act="guest-register"]', { force: true });
+  await G.page.waitForSelector("#auth-age");
+  check(true, "„Konto erstellen“ öffnet die Registrierung");
+  await G.ctx.close();
+
+  // Bestehendes Konto ohne Zustimmung → Fenster zum Nachholen
+  psql("update public.profiles set terms_accepted_at = null, birth_year = null where username = 'Tom'");
+  await fB.goto(`${BASE}?e2e=1#/start`);
+  await fB.reload();
+  await fB.waitForSelector(".terms-gate", { timeout: 8000 });
+  check(true, "Fehlende Zustimmung wird beim Start nachgeholt");
+  await fB.mouse.click(5, 5);
+  check(await fB.isVisible(".terms-gate"), "Das Fenster lässt sich nicht wegtippen");
+  await fB.fill(".terms-gate #auth-age", "14");
+  await fB.check(".terms-gate #auth-parent", { force: true });
+  await fB.check(".terms-gate #auth-terms", { force: true });
+  await fB.click('.terms-gate button[type="submit"]', { force: true });
+  await fB.waitForSelector(".terms-gate", { state: "detached", timeout: 5000 });
+  check(dbVal("select parental_ok::text from public.profiles where username = 'Tom'") === "true", "Unter 16 mit Eltern-Zustimmung gespeichert");
+
+  // Spieler melden
+  await tP.goto(`${BASE}?e2e=1#/clan/mitglieder`);
+  await tP.waitForSelector('[data-player="Tom"]', { timeout: 8000 });
+  await tP.click('[data-player="Tom"]', { force: true });
+  await tP.waitForSelector('[data-pp="report"]', { timeout: 8000 });
+  await tP.click('[data-pp="report"]', { force: true });
+  await tP.check('input[name="rr"][value="name"]', { force: true });
+  await tP.fill("#rr-detail", "Testmeldung");
+  await tP.click('[data-rr="send"]', { force: true });
+  await tP.waitForFunction(() => document.querySelector(".toast")?.textContent.includes("Meldung"), null, { timeout: 5000 });
+  check(dbVal("select count(*) from public.player_reports where kind = 'name' and detail = 'Testmeldung'") === "1", "Spieler gemeldet");
+  await tP.goto(`${BASE}?e2e=1#/start`);
+
+  // Admin (luis.hausner@web.de): Meldung sehen, Tom sperren, wieder entsperren
+  const ADM = await newPage();
+  await ADM.page.goto(`${BASE}?e2e=1`);
+  await ADM.page.click('[data-auth="register"]', { force: true });
+  await fillAuth(ADM.page, "luis.hausner@web.de", "admin12345", "admin12345");
+  await ADM.page.waitForSelector('[data-act="daily"]', { timeout: 8000 });
+  await ADM.page.goto(`${BASE}?e2e=1#/profil`);
+  await ADM.page.waitForSelector('a[href="#/admin"]', { timeout: 8000 });
+  check(true, "Admin sieht den Moderations-Link im Profil");
+  check((await tP.locator('a[href="#/admin"]').count()) === 0, "Normale Spieler sehen keinen Admin-Link");
+  await ADM.page.click('a[href="#/admin"]', { force: true });
+  await ADM.page.waitForSelector(".adm-card", { timeout: 8000 });
+  check((await ADM.page.textContent("#adm-body")).includes("Testmeldung"), "Admin sieht die Meldung");
+  await ADM.page.screenshot({ path: `${SHOTS}/r2-admin.png`, fullPage: true });
+  await ADM.page.click('.adm-card [data-a="player"][data-name="Tom"]', { force: true });
+  await ADM.page.waitForSelector("#adm-reason");
+  await ADM.page.fill("#adm-reason", "Test-Sperre");
+  await ADM.page.click('[data-p="ban24"]', { force: true });
+  await ADM.page.waitForFunction(() => document.querySelector(".modal")?.textContent.includes("Gesperrt bis"), null, { timeout: 5000 });
+  check(dbVal("select (banned_until > now())::text from public.profiles where username = 'Tom'") === "true", "Admin sperrt Tom für 24 Stunden");
+  await fB.goto(`${BASE}?e2e=1#/clan`);
+  await fB.reload();
+  await fB.waitForSelector(".notice.ban", { timeout: 8000 });
+  check((await fB.textContent(".notice.ban")).includes("Test-Sperre"), "Gesperrter Spieler sieht Sperre und Grund");
+  await ADM.page.click('[data-p="unban"]', { force: true });
+  await ADM.page.waitForFunction(() => !document.querySelector(".modal")?.textContent.includes("Gesperrt bis"), null, { timeout: 5000 });
+  check(dbVal("select coalesce((banned_until > now())::text, 'frei') from public.profiles where username = 'Tom'") === "frei", "Sperre wieder aufgehoben");
+  await ADM.page.keyboard.press("Escape").catch(() => {});
+  await ADM.page.goto(`${BASE}?e2e=1#/admin/filter`);
+  await ADM.page.waitForSelector("#w-in");
+  await ADM.page.fill("#w-in", "testwort");
+  await ADM.page.click('#w-form button[type="submit"]', { force: true });
+  await ADM.page.waitForSelector('[data-w="testwort"]', { timeout: 5000 });
+  check(dbVal("select public.zwip_clean_text('ein Testwort hier')") === "ein ******** hier", "Admin fügt Filter-Wort hinzu, es wird sofort gefiltert");
+
+  // Daten herunterladen und Konto löschen (neues Konto)
+  const DEL = await newPage();
+  await DEL.page.goto(`${BASE}?e2e=1`);
+  await DEL.page.click('[data-auth="register"]', { force: true });
+  await fillAuth(DEL.page, "weg@test.de", "wegweg123", "wegweg123", 13);
+  await DEL.page.waitForSelector('[data-act="daily"]', { timeout: 8000 });
+  await DEL.page.goto(`${BASE}?e2e=1#/profil`);
+  await DEL.page.waitForSelector('[data-acc="export"]');
+  const [dl] = await Promise.all([DEL.page.waitForEvent("download", { timeout: 8000 }), DEL.page.click('[data-acc="export"]', { force: true })]);
+  const dlText = fs.readFileSync(await dl.path(), "utf8");
+  check(dl.suggestedFilename().startsWith("zwip-meine-daten") && dlText.includes("weg@test.de"), "Eigene Daten als Datei heruntergeladen");
+  await DEL.page.click('[data-acc="delete"]', { force: true });
+  await DEL.page.waitForSelector("#del-confirm");
+  check(await DEL.page.isDisabled("#del-go"), "Löschen erst nach Eintippen von LÖSCHEN möglich");
+  await DEL.page.fill("#del-confirm", "löschen");
+  await DEL.page.click("#del-go", { force: true });
+  await DEL.page.waitForSelector('[data-auth="register"]', { timeout: 8000 });
+  check(dbVal("select count(*) from auth.users where email = 'weg@test.de'") === "0" && mock.deleted === 1, "Konto gelöscht, zurück im Startmenü");
+
   // ================= SCHMALE HANDYS (360 px) =================
   await tP.setViewportSize({ width: 360, height: 740 });
   const overflow = [];
-  for (const r of ["start", "spielen", "minigames", "minigames/memory", "ranglisten/welt", "ranglisten/minigames/memory", "ranglisten/crew", "ranglisten/clans", "ranglisten/welt", "clan", "clan/chat", "clan/mitglieder", "clan/einstellungen", "freunde", "profil"]) {
+  for (const r of ["start", "spielen", "minigames", "minigames/memory", "ranglisten/welt", "ranglisten/minigames/memory", "ranglisten/crew", "ranglisten/clans", "ranglisten/welt", "clan", "clan/chat", "clan/mitglieder", "clan/einstellungen", "freunde", "profil", "rechtliches/datenschutz", "rechtliches/impressum"]) {
     await tP.goto(`${BASE}?e2e=1#/${r}`);
     await tP.waitForSelector(".tabbar");
     await tP.waitForTimeout(500);

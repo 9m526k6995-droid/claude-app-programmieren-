@@ -105,6 +105,8 @@ export interface MinigameBest {
 }
 
 export interface MinigameFinish {
+  flagged?: boolean;
+  flag?: string;
   stage: number;
   total_ms: number;
   score: number;
@@ -160,6 +162,8 @@ const MESSAGES: Record<string, string> = {
   too_many_invites: "Heute hast du schon genug Einladungen verschickt.",
   not_in_clan: "Du bist in keinem Clan.",
   not_leader: "Das darf nur der Clan-Leiter.",
+  invalid_push: "Push konnte nicht eingerichtet werden.",
+  invite_invalid: "Dieser Einladungslink gilt nicht (mehr). Frag nach einem neuen.",
   player_in_clan: "Dieser Spieler ist schon in einem Clan.",
   invite_not_found: "Diese Einladung gibt es nicht mehr.",
   locked: "Das ist erst mit einem höheren Clan-Level freigeschaltet.",
@@ -171,6 +175,12 @@ const MESSAGES: Record<string, string> = {
   message_not_found: "Diese Nachricht gibt es nicht mehr.",
   invalid_country: "Dieses Land gibt es nicht.",
   country_locked: "Dein Land kannst du nur einmal im Monat ändern.",
+  username_bad: "Dieser Name ist nicht erlaubt. Bitte wähle einen anderen.",
+  banned: "Dein Konto ist gerade gesperrt.",
+  invalid_age: "Bitte gib dein richtiges Alter an.",
+  parent_consent_required: "Unter 16 brauchst du die Zustimmung deiner Eltern.",
+  invalid_report: "Ungültige Meldung.",
+  not_admin: "Dafür brauchst du Admin-Rechte.",
   setup_missing: "Die Datenbank ist noch nicht auf dem neuesten Stand.",
   network: "Keine Verbindung zum Server. Prüfe dein Internet.",
   unknown: "Da ist etwas schiefgelaufen. Bitte versuch es nochmal.",
@@ -374,7 +384,7 @@ export interface MyClan {
   members?: ClanMember[];
   requests?: { username: string; league: string; trophies: number }[];
   invited?: string[];
-  challenges?: { week_start: string; week_end: string; items: ClanChallenge[] };
+  challenges?: { week_start: string; week_end: string; items: ClanChallenge[]; size?: number };
   unread?: number;
 }
 
@@ -417,6 +427,38 @@ export interface ClanContrib {
 }
 
 export const getMyClan = () => call<MyClan>("get_my_clan");
+
+// Einladungslink (?clan=CODE)
+export interface ClanInvite {
+  code: string;
+  can_reset: boolean;
+}
+export const getClanInvite = () => call<ClanInvite>("get_clan_invite");
+export const resetClanInvite = () => call<ClanInvite>("reset_clan_invite");
+export const clanByInvite = (code: string) => call<ClanInfo & { in_this_clan: boolean; in_a_clan: boolean }>("clan_by_invite", { p_code: code });
+export const joinClanByInvite = (code: string) => call<{ status: "joined"; clan_id: string }>("join_clan_by_invite", { p_code: code });
+
+// Clan-Ligen
+export type ClanLeagueId = "bronze" | "silver" | "gold" | "platinum" | "diamond" | "champion";
+export interface ClanLeagueRow extends ClanInfo {
+  rank: number;
+  per_member: number;
+  active: number;
+  week_xp: number;
+  is_mine: boolean;
+}
+export interface ClanLeague {
+  league: ClanLeagueId;
+  next_league: ClanLeagueId;
+  week_end: string;
+  xp: number;
+  active: number;
+  per_member: number;
+  clans_in_league: number;
+  my_rank: number;
+  rows: ClanLeagueRow[];
+}
+export const getClanLeague = () => call<ClanLeague>("get_clan_league");
 export const createClan = (name: string, emblem: string, color: string, description: string, joinMode: JoinMode) =>
   call<MyClan>("create_clan", { p_name: name, p_emblem: emblem, p_color: color, p_description: description, p_join_mode: joinMode });
 export const updateClan = (emblem: string, color: string, frame: string, description: string, joinMode: JoinMode) =>
@@ -458,3 +500,81 @@ export const setCountry = (code: string | null) => call<MyCountry>("set_country"
 export const setCountryHidden = (hidden: boolean) => call<MyCountry>("set_country_hidden", { p_hidden: hidden });
 export const getTrophyRegionBoard = (country: string | null, limit = 100) =>
   call<TrophyBoard>("get_trophy_region_board", { p_country: country ?? "", p_limit: limit });
+
+// ---------- Rechtliches, Konto, Moderation ----------
+
+export interface MyTerms {
+  accepted: boolean;
+  accepted_at: string | null;
+  under16: boolean | null;
+  banned_until: string | null;
+  ban_reason: string | null;
+  warning: string | null;
+  warning_at: string | null;
+  is_admin: boolean;
+}
+
+export const getMyTerms = () => call<MyTerms>("get_my_terms");
+export const acceptTerms = (age: number, parentOk: boolean) => call<MyTerms>("accept_terms", { p_age: age, p_parent_ok: parentOk });
+export const exportMyData = () => call<Record<string, unknown>>("export_my_data");
+export const reportPlayer = (name: string, kind: "name" | "avatar" | "highscore" | "other", game: string | null = null, detail = "") =>
+  call<{ ok: boolean }>("report_player", { p_username: name, p_kind: kind, p_game: game, p_detail: detail });
+
+export interface AdminOverview {
+  players: number;
+  clans: number;
+  open_chat: number;
+  open_players: number;
+  open_runs: number;
+  banned: number;
+}
+export interface AdminReports {
+  chat: { id: number; body: string; hidden: boolean; at: string; username: string | null; clan: string | null; reports: number; reasons: string[]; banned: boolean }[];
+  players: { id: number; kind: string; game: string | null; detail: string; at: string; target: string; reporter: string | null; avatar: string | null; warnings: number; banned: boolean; same_reports: number }[];
+  runs: { id: string; game: string; stage: number; score: number; flagged: string; at: string; username: string; banned: boolean }[];
+}
+export interface AdminPlayer {
+  username: string;
+  trophies: number;
+  league: string;
+  country: string | null;
+  created_at: string;
+  warnings: number;
+  last_warning: string | null;
+  banned_until: string | null;
+  ban_reason: string | null;
+  has_avatar: boolean;
+  avatar: string | null;
+  clan: { id: string; name: string } | null;
+  reports: number;
+  chat_reports: number;
+}
+export const isAdmin = () => call<boolean>("is_admin");
+export const adminOverview = () => call<AdminOverview>("admin_overview");
+export const adminReports = () => call<AdminReports>("admin_reports");
+export const adminMessageContext = (id: number) =>
+  call<{ id: number; username: string | null; body: string; kind: string; hidden: boolean; at: string; is_target: boolean }[]>("admin_message_context", { p_id: id });
+export const adminResolveMessage = (id: number, hide: boolean) => call<AdminOverview>("admin_resolve_message", { p_id: id, p_hide: hide });
+export const adminResolveReport = (id: number, status: "done" | "dismissed") => call<AdminOverview>("admin_resolve_report", { p_id: id, p_status: status });
+export const adminResolveRun = (id: string, valid: boolean) => call<AdminOverview>("admin_resolve_run", { p_id: id, p_valid: valid });
+export const adminBan = (name: string, hours: number, reason: string) => call<AdminPlayer>("admin_ban", { p_username: name, p_hours: hours, p_reason: reason });
+export const adminWarn = (name: string, reason: string) => call<AdminPlayer>("admin_warn", { p_username: name, p_reason: reason });
+export const adminResetName = (name: string) => call<AdminPlayer>("admin_reset_name", { p_username: name });
+export const adminResetAvatar = (name: string) => call<AdminPlayer>("admin_reset_avatar", { p_username: name });
+export const adminResetClan = (id: string) => call<unknown>("admin_reset_clan", { p_clan: id });
+export const adminPlayer = (name: string) => call<AdminPlayer | null>("admin_player", { p_username: name });
+export const adminSearch = (q: string) => call<{ username: string; warnings: number; banned: boolean; league: string }[]>("admin_search", { p_query: q });
+export const adminWords = () => call<{ word: string; active: boolean; at: string }[]>("admin_words");
+export const adminSetWord = (word: string, active: boolean) => call<{ word: string; active: boolean; at: string }[]>("admin_set_word", { p_word: word, p_active: active });
+
+// ---------- Push-Erinnerungen ----------
+export interface PushSettings {
+  public_key: string | null;
+  devices: number;
+  remind_hour: number;
+}
+export const getPushSettings = () => call<PushSettings>("get_push_settings");
+export const savePushSub = (endpoint: string, p256dh: string, auth: string, tz: string, hour: number) =>
+  call<PushSettings>("save_push_sub", { p_endpoint: endpoint, p_p256dh: p256dh, p_auth: auth, p_tz: tz, p_hour: hour });
+export const removePushSub = (endpoint: string | null) => call<PushSettings>("remove_push_sub", { p_endpoint: endpoint });
+export const markDailyPlayed = (day: number, streak: number) => call<null>("mark_daily_played", { p_day: day, p_streak: streak });

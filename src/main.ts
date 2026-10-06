@@ -28,7 +28,10 @@ import { confetti, floatText, shake, countUp } from "./fx";
 import { publicBase, CONFIG } from "./config";
 import { restoreSession, currentUser, signOut, onAuthChange } from "./auth";
 import { stagePoints, fmtScore, scoreFromStage } from "./score";
-import { renderClan, renderClanBoard, CLAN_PERIODS } from "./clanUi";
+import { renderClan, renderClanBoard, CLAN_PERIODS, openClanInvite } from "./clanUi";
+import { legalHtml, legalNavHtml, LEGAL_TITLES, type LegalPage } from "./legal";
+import { openTermsGate, takeRememberedTerms, noticeHtml, accountSectionHtml, bindAccountSection } from "./accountUi";
+import { renderAdmin } from "./adminUi";
 import { emblemHtml } from "./clanKit";
 import {
   loadMyCountry,
@@ -56,10 +59,14 @@ import {
   cachedAvatar,
   setCachedAvatar,
   startMinigameRun,
+  markDailyPlayed,
   finishMinigameRun,
   getMinigameRanking,
   getPlayerClan,
   getTrophyRegionBoard,
+  getMyTerms,
+  acceptTerms,
+  type MyTerms,
   getMyMinigameBests,
   type MyProfile,
   type MinigameBest,
@@ -67,7 +74,9 @@ import {
 } from "./social";
 import { renderPath, renderTrophyResult, renderWorldBoard, askUsername, suggestUsername, leagueUp } from "./trophyUi";
 import { renderFriends } from "./friendsUi";
-import { renderStart } from "./startmenu";
+import { renderStart, renderAuthForm } from "./startmenu";
+import { openTour, guestWallHtml, guestBannerHtml } from "./onboarding";
+import { pushSettingsHtml, mountPushSettings, dropPushOnLogout } from "./push";
 import { mountMyProfile, openPlayerProfile } from "./profileUi";
 import { routeParts, go, shellHtml, replaceRoute, type TabId } from "./nav";
 import {
@@ -90,7 +99,11 @@ declare const __ZWIP_SINGLE__: boolean;
 
 const app = document.getElementById("app")!;
 let S: State = loadState();
-const sfx = createSfx(S.muted);
+const sfx = createSfx(S.muted, S.vibrate);
+
+/** Gast-Modus: spielen ohne Konto (nur lokal, keine Ranglisten) */
+const isGuest = () => !currentUser() && S.guest;
+const canPlay = () => Boolean(currentUser()) || S.guest;
 const params = new URLSearchParams(location.search);
 const E2E = params.has("e2e");
 const save = () => saveState(S);
@@ -214,6 +227,37 @@ let pendingProfile: string | null = null;
   }
 }
 
+// ---------- Clan-Einladungslinks (?clan=CODE) ----------
+
+let pendingClan: string | null = null;
+{
+  const code = params.get("clan")?.trim().toUpperCase();
+  if (code) {
+    if (/^[A-Z0-9]{6,12}$/.test(code)) pendingClan = code;
+    else toast("Dieser Clan-Link ist kaputt 🤔");
+    try {
+      history.replaceState(null, "", location.pathname);
+    } catch {
+      /* in Sandbox egal */
+    }
+  }
+}
+
+/** Nach der Anmeldung: Einladung aus einem geöffneten Clan-Link zeigen. */
+function openPendingClan() {
+  if (!pendingClan || !currentUser()) return;
+  const code = pendingClan;
+  pendingClan = null;
+  void openClanInvite(code, {
+    hasName: () => Boolean(myProfile?.username),
+    askName: (then) => {
+      if (myProfile) askName(then);
+      else void loadProfile().then(() => (myProfile?.username ? then() : askName(then)));
+    },
+    go: (path) => navigate(path),
+  });
+}
+
 /** Nach der Anmeldung: Profil aus einem geöffneten Direktlink zeigen. */
 function openPendingProfile() {
   if (!pendingProfile) return;
@@ -295,8 +339,50 @@ function navigate(path: string) {
 /** Seitengerüst mit Kopfzeile und Tab-Leiste zeichnen, liefert den Inhaltsbereich. */
 function shell(tab: TabId | null, title: string, body: string, opts: { back?: string; titleHtml?: string; cls?: string } = {}): HTMLElement {
   clearTimers();
-  app.innerHTML = shellHtml({ tab, title, flame: myTrophyLabel(), body, ...opts });
+  app.innerHTML = shellHtml({ tab, title, flame: myTrophyLabel(), body: (isGuest() ? guestBannerHtml() : noticeHtml(myTerms)) + body, ...opts });
   return document.getElementById("page")!;
+}
+
+// ---------- Nutzungsbedingungen, Alter, Sperren ----------
+
+let myTerms: MyTerms | null = null;
+
+/** Nach jeder Anmeldung: Zustimmung + Alter vorhanden? Sonst nachholen. Holt auch Sperr-/Verwarn-Status und Admin-Rechte. */
+async function ensureTerms() {
+  try {
+    let t = await getMyTerms();
+    if (!t.accepted) {
+      const pending = takeRememberedTerms();
+      if (pending) t = await acceptTerms(pending.age, pending.parentOk).catch(() => t);
+    }
+    myTerms = t;
+    if (!t.accepted)
+      openTermsGate((nt) => {
+        myTerms = nt;
+        maybeTour();
+      });
+    else if ((t.banned_until || t.warning) && !document.querySelector(".notice")) renderRoute();
+  } catch {
+    /* offline – beim nächsten Start nochmal */
+  }
+}
+
+/** Rechtliche Seiten – funktionieren auch ohne Anmeldung */
+function legalScreen(page: string | undefined) {
+  const p = (page && page in LEGAL_TITLES ? page : "impressum") as LegalPage;
+  const body = `${legalNavHtml(p)}${legalHtml(p)}`;
+  if (canPlay()) {
+    shell(null, LEGAL_TITLES[p], body, { back: "profil" });
+    return;
+  }
+  clearTimers();
+  app.innerHTML = `<div class="screen legal-screen">
+    <header class="topbar"><button class="icon-btn" data-act="legal-back" aria-label="Zurück">←</button><span class="mode-tag">${LEGAL_TITLES[p]}</span><span class="icon-btn ghost-slot"></span></header>
+    ${body}</div>`;
+  app.querySelector('[data-act="legal-back"]')!.addEventListener("click", () => {
+    replaceRoute("start");
+    showStart();
+  });
 }
 
 /** Zeichnet den Bildschirm, der zur aktuellen Adresse (#/…) gehört. */
@@ -307,6 +393,17 @@ function renderRoute() {
   const parts = routeParts();
   if (parts[0] !== "pfad") lastRoute = parts.join("/");
   window.scrollTo(0, 0);
+  if (isGuest()) {
+    const wall: Record<string, string> = { freunde: "Freunde", clan: "Clans", admin: "Moderation", pfad: "Der Trophäen-Modus" };
+    const w = wall[parts[0]] ?? (parts[0] === "ranglisten" && parts[1] !== "crew" ? "Die Rangliste" : "");
+    if (w) {
+      const tab: TabId = parts[0] === "freunde" ? "freunde" : parts[0] === "clan" ? "clan" : parts[0] === "ranglisten" ? "ranglisten" : "spielen";
+      if (parts[0] === "ranglisten") shell(tab, "Ranglisten", segHtml(["welt", "minigames", "clans"].includes(parts[1]) ? parts[1] : "welt") + guestWallHtml(w));
+      else shell(tab, w.replace(/^(Der|Die) /, ""), guestWallHtml(w));
+      return;
+    }
+    if (parts[0] === "profil") return guestProfileScreen();
+  }
   switch (parts[0]) {
     case "spielen":
       return playMenuScreen();
@@ -319,6 +416,10 @@ function renderRoute() {
       return friendsScreen();
     case "clan":
       return clanScreen(parts[1], parts[2]);
+    case "rechtliches":
+      return legalScreen(parts[1]);
+    case "admin":
+      return void renderAdmin(shell(null, "Moderation", "", { back: "profil" }), parts[1], (path) => navigate(path));
     case "profil":
       return profileScreen();
     case "pfad":
@@ -332,7 +433,11 @@ function renderRoute() {
 window.addEventListener("hashchange", () => void (currentUser() && refreshBadges()));
 
 window.addEventListener("hashchange", () => {
-  if (!currentUser()) return;
+  if (!canPlay()) {
+    // Ohne Anmeldung: nur die rechtlichen Seiten
+    if (routeParts()[0] === "rechtliches") legalScreen(routeParts()[1]);
+    return;
+  }
   if (running) {
     // Zurück-Knopf während eines Laufs: Lauf beenden, danach wird die neue Seite gezeigt
     navAbort = true;
@@ -744,6 +849,8 @@ async function startRun(mode: Mode, opts: RunOpts = {}) {
   const result: DayResult = { score: total, rounds };
   if (mode === "daily") {
     recordDaily(S, t, result);
+    // Server weiß dann: heute keine Erinnerung mehr nötig
+    if (currentUser()) void markDailyPlayed(t, currentStreak(S, t)).catch(() => {});
   } else if (mode === "free") {
     S.best.free = Math.max(S.best.free, total);
   }
@@ -895,6 +1002,10 @@ function resultShareText(d: ResultData, withChallenge: boolean): string {
 let mgBests: BestMap | null = null;
 
 async function loadMgBests(): Promise<BestMap | null> {
+  if (isGuest()) {
+    mgBests = new Map(Object.entries(S.guestBests).map(([game, b]) => [game, { game, best_score: b.score, best_stage: b.stage, best_ms: b.ms, plays: b.plays, rank: null }]));
+    return mgBests;
+  }
   try {
     const list = await getMyMinigameBests();
     mgBests = new Map(list.map((b) => [b.game, b]));
@@ -1037,6 +1148,8 @@ function clanScreen(sub?: string, arg?: string) {
     go: (path) => navigate(path),
     every: (ms, fn) => timers.push(window.setInterval(fn, ms)),
     refreshBadges: () => void refreshBadges(true),
+    publicBase: () => publicBase(),
+    share: (t) => doShare(t),
   });
 }
 
@@ -1062,9 +1175,11 @@ function profileScreen() {
       <h2 class="sec-title">Einstellungen</h2>
       <label class="lbl" for="set-name">Name für Duell-Links</label>
       <div class="row"><input id="set-name" maxlength="20" value="${esc(S.name)}" autocomplete="nickname"><button class="btn sm" id="set-save" type="button">Speichern</button></div>
-      <label class="toggle"><input type="checkbox" id="set-sound" ${S.muted ? "" : "checked"}> Ton an</label>
+      ${soundTogglesHtml()}
     </section>
+    ${pushSettingsHtml()}
     ${countrySettingsHtml()}
+    ${accountSectionHtml(Boolean(myTerms?.is_admin))}
     <section class="card-sec how">
       <h2 class="sec-title">So geht ZWIP</h2>
       <p>Jeden Tag gibt es eine Daily mit 10 Blitz-Challenges – für alle gleich. Vor jeder Aufgabe kommt eine kurze Erklärung – mit „OK, los!“ geht's sofort weiter. Schnell + richtig = mehr Punkte (max. 1000).</p>
@@ -1078,11 +1193,14 @@ function profileScreen() {
     onAvatar: (a) => setCachedAvatar(currentUser()?.id, a),
     onRename: (then) => askName(then),
     onSignOut: async () => {
+      await dropPushOnLogout().catch(() => {});
       await signOut();
       toast("Du bist abgemeldet 👋");
     },
   });
   void mountCountrySettings(page);
+  void mountPushSettings(page);
+  bindAccountSection(page, () => showStart());
   page.querySelector("#set-save")!.addEventListener("click", () => {
     const n = page.querySelector<HTMLInputElement>("#set-name")!.value.trim();
     if (n) {
@@ -1092,11 +1210,70 @@ function profileScreen() {
       toast("Name gespeichert ✓");
     }
   });
-  page.querySelector<HTMLInputElement>("#set-sound")!.addEventListener("change", (e) => {
+  bindSoundToggles(page);
+}
+
+function soundTogglesHtml(): string {
+  const canVibrate = typeof navigator !== "undefined" && typeof navigator.vibrate === "function";
+  return `<label class="toggle"><input type="checkbox" id="set-sound" ${S.muted ? "" : "checked"}> Ton an</label>
+      <label class="toggle"><input type="checkbox" id="set-vibrate" ${S.vibrate ? "checked" : ""} ${canVibrate ? "" : "disabled"}> Vibration an${canVibrate ? "" : ` <small class="muted">(auf diesem Gerät nicht möglich)</small>`}</label>`;
+}
+
+function bindSoundToggles(page: HTMLElement) {
+  page.querySelector<HTMLInputElement>("#set-sound")?.addEventListener("change", (e) => {
     S.muted = !(e.target as HTMLInputElement).checked;
     sfx.setMuted(S.muted);
     save();
   });
+  page.querySelector<HTMLInputElement>("#set-vibrate")?.addEventListener("change", (e) => {
+    S.vibrate = (e.target as HTMLInputElement).checked;
+    sfx.setVibrate(S.vibrate);
+    save();
+    if (S.vibrate) navigator.vibrate?.(40);
+  });
+}
+
+/** Profil im Gast-Modus: Einstellungen + Konto erstellen */
+function guestProfileScreen() {
+  const page = shell(
+    "profil",
+    "Profil",
+    `${guestWallHtml("Ein eigenes Profil")}
+    <section class="card-sec settings">
+      <h2 class="sec-title">Einstellungen</h2>
+      ${soundTogglesHtml()}
+    </section>
+    <section class="card-sec">
+      <button class="btn sm ghost" type="button" data-act="guest-exit">Gast-Modus beenden</button>
+      <nav class="legal-links"><a href="#/rechtliches/impressum">Impressum</a> · <a href="#/rechtliches/datenschutz">Datenschutz</a> · <a href="#/rechtliches/regeln">Nutzungsbedingungen</a></nav>
+    </section>`,
+  );
+  bindSoundToggles(page);
+}
+
+// ---------- Einführung beim ersten Öffnen ----------
+
+const TOUR_KEY = "zwip:tour";
+function tourSeen(): boolean {
+  try {
+    return localStorage.getItem(TOUR_KEY) === "1";
+  } catch {
+    return true;
+  }
+}
+function maybeTour() {
+  if (tourSeen()) return;
+  const markSeen = () => {
+    try {
+      localStorage.setItem(TOUR_KEY, "1");
+    } catch {
+      /* egal */
+    }
+  };
+  // Wer schon gespielt hat, kennt die App
+  if (S.plays > 0 || Object.keys(S.daily).length) return markSeen();
+  if (document.querySelector(".modal-bg")) return; // z. B. Zustimmungs-Fenster offen – später nochmal
+  openTour(markSeen);
 }
 
 // ---------- Minigames ----------
@@ -1148,6 +1325,12 @@ function minigamesScreen() {
 function minigameDetailScreen(id: string) {
   const g = GAME_BY_ID[id];
   const page = shell("spielen", g.title, minigameDetailHtml(g, mgBests?.get(id)), { back: "minigames" });
+  if (isGuest()) {
+    const board = page.querySelector<HTMLElement>("#mg-board");
+    page.querySelector("#mg-scope")?.remove();
+    if (board) board.innerHTML = guestWallHtml("Die Rangliste");
+    return;
+  }
   mountRanking(page.querySelector<HTMLElement>("#mg-scope")!, page.querySelector<HTMLElement>("#mg-board")!, id);
   void loadMgBests().then((b) => {
     const best = b?.get(id);
@@ -1173,7 +1356,8 @@ async function startMinigame(id: string) {
   const holder = document.getElementById("holder")!;
 
   // Lauf beim Server anmelden (liefert den Seed). Ohne Netz wird trotzdem gespielt, aber nicht gewertet.
-  const runP = startMinigameRun(id).catch((e: unknown) => e);
+  const guestRun = isGuest();
+  const runP = guestRun ? Promise.resolve(null) : startMinigameRun(id).catch((e: unknown) => e);
   await explainGame(holder, g, prevBest ? `Minigame · Highscore: ${fmtScore(prevBest)}` : "Minigame · Stufe 1");
   const run = await runP;
   const runId = run && typeof run === "object" && "run_id" in run ? (run as { run_id: string; seed: number }) : null;
@@ -1229,6 +1413,19 @@ async function startMinigame(id: string) {
   mgLast = { game: id, stage, score };
 
   const view: MgResultView = { game: g, stage, totalMs, score, record: score > prevBest, prevBest, rank: null, totalPlayers: null, saving: Boolean(runId) };
+  if (guestRun) {
+    // Gast: Highscore nur auf diesem Gerät merken
+    const old = S.guestBests[id] ?? { score: 0, stage: 0, ms: 0, plays: 0 };
+    const rec = score > old.score;
+    S.guestBests[id] = { score: rec ? score : old.score, stage: rec ? stage : Math.max(old.stage, stage), ms: rec ? totalMs : old.ms, plays: old.plays + 1 };
+    save();
+    void loadMgBests();
+    view.guest = true;
+    view.saving = false;
+    if (!leftByNav) showMinigameResult(view);
+    else renderRoute();
+    return;
+  }
   if (!runId) {
     view.error = "Keine Verbindung beim Start – dieser Lauf zählt nicht für die Rangliste.";
     view.saving = false;
@@ -1265,6 +1462,10 @@ async function submitMinigame(show = true) {
     };
     (mgBests ??= new Map()).set(p.game, best);
     if (show && app.querySelector(".mg-result")) {
+      if (res.flagged) {
+        showMinigameResult({ ...p.view, record: false, saving: false, note: "Dieser Lauf wurde zur Prüfung markiert und zählt vorerst nicht. Wenn alles in Ordnung ist, wird er nachträglich gewertet." });
+        return;
+      }
       showMinigameResult({
         ...p.view,
         score: res.score ?? p.view.score,
@@ -1289,8 +1490,9 @@ app.addEventListener("click", async (e) => {
   const btn = (e.target as HTMLElement).closest<HTMLElement>("[data-act]");
   if (!btn) return;
   const act = btn.dataset.act!;
-  // Spiel nur mit Anmeldung erreichbar
-  if (!currentUser()) return showStart();
+  // Spiel nur mit Anmeldung oder als Gast
+  if (act === "guest-register" || act === "guest-login") return showStart(act === "guest-register" ? "register" : "login");
+  if (!canPlay()) return showStart();
   if (act !== "quit") sfx.tap();
   const t = today();
   switch (act) {
@@ -1355,6 +1557,11 @@ app.addEventListener("click", async (e) => {
       return;
     case "profile":
       return navigate("profil");
+    case "guest-exit":
+      S.guest = false;
+      save();
+      replaceRoute("start");
+      return showStart();
     case "sound":
       S.muted = !S.muted;
       sfx.setMuted(S.muted);
@@ -1681,26 +1888,43 @@ async function submitTrophyRun() {
 
 // ---------- Start: erst Anmeldung, dann Spiel ----------
 
-function showStart() {
+function showStart(mode?: "register" | "login") {
   aborted = true;
   clearTimers();
   document.querySelector(".modal-bg")?.remove();
-  renderStart(app, {
+  const hooks: Parameters<typeof renderStart>[1] = {
+    onGuest: () => {
+      S.guest = true;
+      save();
+      if (!location.hash || routeParts()[0] === "rechtliches") replaceRoute("start");
+      renderRoute();
+      maybeTour();
+    },
     banner: pending
       ? `<b>${esc(pending.n)}</b> fordert dich heraus (${sumPoints(pending.r)} Punkte)`
-      : pendingProfile
-        ? `Du wurdest zum Profil von <b>${esc(pendingProfile)}</b> eingeladen`
-        : undefined,
-    bannerIcon: pending ? undefined : "👤",
-    bannerSub: pending ? undefined : "Melde dich an, um das Profil zu sehen.",
+      : pendingClan
+        ? `Du wurdest in einen <b>Clan</b> eingeladen`
+        : pendingProfile
+          ? `Du wurdest zum Profil von <b>${esc(pendingProfile)}</b> eingeladen`
+          : undefined,
+    bannerIcon: pending ? undefined : pendingClan ? "🛡️" : "👤",
+    bannerSub: pending ? undefined : pendingClan ? "Melde dich an oder erstelle ein Konto, um beizutreten." : "Melde dich an, um das Profil zu sehen.",
     onSignedIn: (fresh) => {
       renderRoute();
       void loadProfile();
       openPendingProfile();
+      openPendingClan();
       startBadges();
+      void ensureTerms().then(maybeTour);
+      if (S.guest) {
+        S.guest = false;
+        save();
+      }
       toast(fresh ? "Account erstellt – viel Spaß! 🎉" : "Angemeldet ✌️");
     },
-  });
+  };
+  if (mode) renderAuthForm(app, mode, hooks);
+  else renderStart(app, hooks);
 }
 
 // Abgemeldet (Logout oder abgelaufene Sitzung) → zurück ins Startmenü
@@ -1711,6 +1935,7 @@ onAuthChange((s) => {
     mgBests = null;
     stopBadges();
     resetMyCountry();
+    myTerms = null;
     // Nach dem Abmelden startet die nächste Anmeldung wieder auf „Start“
     if (location.hash) replaceRoute("start");
     showStart();
@@ -1724,7 +1949,13 @@ async function boot() {
     renderRoute();
     void loadProfile();
     openPendingProfile();
+    openPendingClan();
     startBadges();
+    void ensureTerms().then(maybeTour);
+  } else if (routeParts()[0] === "rechtliches") legalScreen(routeParts()[1]);
+  else if (S.guest) {
+    renderRoute();
+    maybeTour();
   } else showStart();
 }
 

@@ -1,5 +1,5 @@
 // Service Worker: Netzwerk zuerst, Cache als Offline-Fallback. So gibt es nie veraltete Versionen.
-const CACHE = "zwip-v2";
+const CACHE = "zwip-v3";
 // app-<hash>.js/.css werden beim ersten Laden automatisch mitgespeichert
 const SHELL = ["./", "./index.html", "./icon.svg", "./manifest.webmanifest"];
 
@@ -24,5 +24,40 @@ self.addEventListener("fetch", (e) => {
         return res;
       })
       .catch(() => caches.match(e.request, { ignoreSearch: true }).then((r) => r || caches.match("./index.html"))),
+  );
+});
+
+// Push-Erinnerungen (siehe supabase/push.sql und die Edge Function push-send)
+self.addEventListener("push", (e) => {
+  let d = {};
+  try {
+    d = e.data ? e.data.json() : {};
+  } catch {
+    d = { body: e.data ? e.data.text() : "" };
+  }
+  e.waitUntil(
+    self.registration.showNotification(d.title || "ZWIP", {
+      body: d.body || "",
+      icon: "./icon.svg",
+      badge: "./icon.svg",
+      tag: d.tag || "zwip",
+      data: { url: d.url || "./" },
+    }),
+  );
+});
+
+self.addEventListener("notificationclick", (e) => {
+  e.notification.close();
+  const url = new URL((e.notification.data && e.notification.data.url) || "./", self.registration.scope).href;
+  e.waitUntil(
+    self.clients.matchAll({ type: "window", includeUncontrolled: true }).then((list) => {
+      for (const c of list) {
+        if (c.url.startsWith(self.registration.scope) && "focus" in c) {
+          c.navigate(url).catch(() => {});
+          return c.focus();
+        }
+      }
+      return self.clients.openWindow(url);
+    }),
   );
 });

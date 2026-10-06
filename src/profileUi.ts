@@ -10,6 +10,7 @@ import {
   getPlayerProfile,
   sendFriendRequest,
   respondFriendRequest,
+  reportPlayer,
   SocialError,
   type ProfileCard,
 } from "./social";
@@ -356,8 +357,10 @@ export function openPlayerProfile(username: string, h: PlayerProfileHandlers) {
         ${statsHtml(p)}
         ${action}
         ${linkBox(p.username, "Profil-Link")}
-        <button class="btn ghost" type="button" data-close>Schließen</button>`;
+        <button class="btn ghost" type="button" data-close>Schließen</button>
+        <button class="link-btn report-link" type="button" data-pp="report">🚩 ${esc(p.username)} melden</button>`;
       bindLink(root, p.username, `Schau dir ${p.username} auf ZWIP an ⚡`);
+      root.querySelector('[data-pp="report"]')?.addEventListener("click", () => openReport(root, p.username, () => render(p)));
       const run = async (fn: () => Promise<{ status: string }>, ok: (s: string) => string) => {
         root.querySelectorAll<HTMLButtonElement>("[data-pp]").forEach((b) => (b.disabled = true));
         try {
@@ -402,5 +405,38 @@ export function openPlayerProfile(username: string, h: PlayerProfileHandlers) {
             <button class="btn ghost" type="button" data-close>Schließen</button>`;
         });
     load();
+  });
+}
+
+/** Spieler melden: Grund auswählen, optional kurz beschreiben */
+function openReport(root: HTMLElement, username: string, back: () => void) {
+  const reasons: [string, string][] = [
+    ["name", "Unpassender Spielername"],
+    ["avatar", "Unpassendes Profilbild"],
+    ["highscore", "Verdächtiger Highscore (Schummeln)"],
+    ["other", "Etwas anderes"],
+  ];
+  root.innerHTML = `
+    <h3 class="modal-title">${esc(username)} melden</h3>
+    <p class="muted small">Meldungen sind anonym. Wir schauen sie uns an und greifen ein, wenn gegen die Regeln verstoßen wurde.</p>
+    <div class="report-reasons" role="radiogroup">${reasons
+      .map(([k, l], i) => `<label class="mode-opt"><input type="radio" name="rr" value="${k}" ${i === 0 ? "checked" : ""}><b>${l}</b></label>`)
+      .join("")}</div>
+    <label class="field"><span class="field-label">Was ist passiert? (optional)</span><input id="rr-detail" maxlength="200" placeholder="z. B. welches Spiel"></label>
+    <button class="btn primary" type="button" data-rr="send">Meldung abschicken</button>
+    <button class="btn ghost" type="button" data-rr="back">Zurück</button>`;
+  root.querySelector('[data-rr="back"]')!.addEventListener("click", back);
+  root.querySelector('[data-rr="send"]')!.addEventListener("click", async (e) => {
+    const btn = e.currentTarget as HTMLButtonElement;
+    btn.disabled = true;
+    const kind = (root.querySelector<HTMLInputElement>('input[name="rr"]:checked')?.value ?? "other") as "name" | "avatar" | "highscore" | "other";
+    try {
+      await reportPlayer(username, kind, null, root.querySelector<HTMLInputElement>("#rr-detail")!.value);
+      toast("Danke! Die Meldung ist bei uns angekommen 🙏");
+      back();
+    } catch (ex) {
+      toast(ex instanceof SocialError ? ex.message : errMsg(ex));
+      btn.disabled = false;
+    }
   });
 }

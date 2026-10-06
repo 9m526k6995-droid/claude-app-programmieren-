@@ -133,9 +133,10 @@ insert into public.clan_xp_log (clan_id, user_id, xp, rounds, source)
   select id, :K3, 30000, 1, 'minigame' from public.clans where name = 'Die Blitze';
 update public.clans set xp = xp + 30000 where name = 'Die Blitze';
 set role authenticated; select t_login(:K1);
-select t_assert((get_my_clan() -> 'challenges' -> 'items' -> 0 ->> 'done')::boolean, 'Challenge „25.000 Punkte“ geschafft');
-select t_assert((get_my_clan() -> 'clan' ->> 'xp')::int = 375 + 30000 + 1500, 'Bonus-XP genau einmal gutgeschrieben');
-select t_assert((get_my_clan() -> 'clan' ->> 'level')::int = 6, 'Level steigt mit XP (31.875 XP → Level 6)');
+select t_assert((get_my_clan() -> 'challenges' -> 'items' -> 0 ->> 'done')::boolean, 'Challenge „10.000 Punkte“ (kleiner Clan) geschafft');
+select t_assert((get_my_clan() -> 'clan' ->> 'xp')::int = 375 + 30000 + (select sum((x ->> 'reward')::int) from jsonb_array_elements(get_my_clan() -> 'challenges' -> 'items') x where (x ->> 'done')::boolean),
+  'Bonus-XP genau einmal gutgeschrieben');
+select t_assert((get_my_clan() -> 'clan' ->> 'level')::int = 6, 'Level steigt mit XP (über 25.000 XP → Level 6)');
 select t_assert((update_clan('👑', '#ff8a3d', 'silver', 'Neu!', 'open') -> 'clan' ->> 'emblem') = '👑', 'Freigeschaltetes Emblem, Farbe und Rahmen setzen');
 select t_assert(t_error_of($$select update_clan('🏆', '#ff8a3d', 'none', '', 'open')$$) = 'locked', 'Gesperrtes Emblem (erst Level 12)');
 select t_login(:K2);

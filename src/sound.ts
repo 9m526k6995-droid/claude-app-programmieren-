@@ -10,12 +10,15 @@ export interface Sfx {
   beat(accent?: boolean): void;
   win(): void;
   setMuted(m: boolean): void;
+  /** Vibration an/aus (unabhängig vom Ton) */
+  setVibrate(v: boolean): void;
   unlock(): void;
 }
 
-export function createSfx(initiallyMuted: boolean): Sfx {
+export function createSfx(initiallyMuted: boolean, initiallyVibrate = true): Sfx {
   let ctx: AudioContext | null = null;
   let muted = initiallyMuted;
+  let vibrate = initiallyVibrate;
 
   function ac(): AudioContext | null {
     if (muted) return null;
@@ -48,10 +51,10 @@ export function createSfx(initiallyMuted: boolean): Sfx {
     o.stop(t0 + dur + 0.02);
   }
 
-  function buzz() {
-    if (navigator.vibrate) {
+  function buzz(pattern: number | number[] = 60) {
+    if (vibrate && typeof navigator !== "undefined" && navigator.vibrate) {
       try {
-        navigator.vibrate(60);
+        navigator.vibrate(pattern);
       } catch {
         /* ignore */
       }
@@ -65,6 +68,9 @@ export function createSfx(initiallyMuted: boolean): Sfx {
     setMuted(m) {
       muted = m;
     },
+    setVibrate(v) {
+      vibrate = v;
+    },
     tap() {
       tone(660, 0.05, "triangle", 0.12);
     },
@@ -76,6 +82,7 @@ export function createSfx(initiallyMuted: boolean): Sfx {
       tone(base, 0.08, "triangle", 0.16);
       tone(base * 1.5, 0.12, "triangle", 0.14, undefined, 0.06);
       if (points >= 86) tone(base * 2, 0.16, "sine", 0.12, undefined, 0.13);
+      buzz(15);
     },
     bad() {
       tone(220, 0.22, "sawtooth", 0.1, 110);
@@ -93,6 +100,7 @@ export function createSfx(initiallyMuted: boolean): Sfx {
     },
     win() {
       [523, 659, 784, 1047].forEach((f, i) => tone(f, 0.18, "triangle", 0.15, undefined, i * 0.09));
+      buzz([30, 50, 30, 50, 80]);
     },
   };
 }

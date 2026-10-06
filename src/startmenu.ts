@@ -1,6 +1,7 @@
 // Startmenü, Registrierung und Anmeldung. Eigene Datei, damit das Spiel selbst unberührt bleibt.
 
 import { signIn, signUp, authConfigured, authMessage, AuthError, MIN_PASSWORD } from "./auth";
+import { termsFieldsHtml, bindTermsFields, readTermsFields, rememberTerms } from "./accountUi";
 
 const esc = (s: string) =>
   s.replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[c]!);
@@ -15,6 +16,8 @@ export interface StartMenuHooks {
   /** Symbol und Unterzeile für das Banner (Standard: Duell) */
   bannerIcon?: string;
   bannerSub?: string;
+  /** „Ohne Konto spielen“ – wenn gesetzt, wird der Knopf angezeigt */
+  onGuest?: () => void;
 }
 
 export function renderStart(app: HTMLElement, hooks: StartMenuHooks) {
@@ -34,7 +37,10 @@ export function renderStart(app: HTMLElement, hooks: StartMenuHooks) {
         ? `<p class="start-note muted">Kostenlos. Nur E-Mail und Passwort.</p>`
         : `<p class="start-note warn" role="status">${esc(authMessage("not_configured"))}</p>`
     }
+    ${hooks.onGuest ? `<button class="link-btn guest-btn" data-auth="guest" type="button">Erst mal <b>ohne Konto spielen</b> →</button>` : ""}
+    <nav class="legal-links start-legal"><a href="#/rechtliches/impressum">Impressum</a> · <a href="#/rechtliches/datenschutz">Datenschutz</a> · <a href="#/rechtliches/regeln">Nutzungsbedingungen</a></nav>
   </div>`;
+  app.querySelector('[data-auth="guest"]')?.addEventListener("click", () => hooks.onGuest?.());
   app.querySelector('[data-auth="login"]')!.addEventListener("click", () => renderAuthForm(app, "login", hooks));
   app.querySelector('[data-auth="register"]')!.addEventListener("click", () => renderAuthForm(app, "register", hooks));
 }
@@ -68,7 +74,8 @@ export function renderAuthForm(app: HTMLElement, mode: "login" | "register", hoo
       ${
         reg
           ? `<label class="lbl" for="auth-password2">Passwort bestätigen</label>
-             <input id="auth-password2" name="password2" type="password" required autocomplete="new-password" enterkeyhint="go">`
+             <input id="auth-password2" name="password2" type="password" required autocomplete="new-password" enterkeyhint="next">
+             ${termsFieldsHtml()}`
           : ""
       }
 
@@ -98,6 +105,7 @@ export function renderAuthForm(app: HTMLElement, mode: "login" | "register", hoo
     }
   };
 
+  if (reg) bindTermsFields(app);
   app.querySelector('[data-auth="back"]')!.addEventListener("click", () => renderStart(app, hooks));
   app.querySelector('[data-auth="switch"]')!.addEventListener("click", () =>
     renderAuthForm(app, reg ? "login" : "register", hooks, email.value),
@@ -114,6 +122,15 @@ export function renderAuthForm(app: HTMLElement, mode: "login" | "register", hoo
   form.addEventListener("submit", async (e) => {
     e.preventDefault();
     errBox.hidden = true;
+    if (reg) {
+      const t = readTermsFields(app);
+      if ("error" in t) {
+        showError(t.error, t.field);
+        return;
+      }
+      // Wird nach der ersten Anmeldung an den Server übertragen
+      rememberTerms(t);
+    }
     submit.disabled = true;
     const label = submit.textContent;
     submit.textContent = reg ? "Account wird erstellt…" : "Anmelden…";

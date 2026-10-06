@@ -10,3 +10,5 @@ create or replace function auth.uid() returns uuid language sql stable as $$
 $$;
 grant usage on schema auth to anon, authenticated;
 grant execute on function auth.uid() to anon, authenticated;
+do $$ begin create role service_role nologin; exception when duplicate_object then null; end $$;
+alter table auth.users add column if not exists created_at timestamptz not null default now();

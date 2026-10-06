@@ -58,6 +58,21 @@ as $$
   end
 $$;
 
+-- Untergrenze für den Tempo-Wert (ms), die ein Mensch nicht unterschreiten kann – nur für reine Reaktionsspiele.
+-- Bei Spielen mit Vorbereitungszeit sieht man die Aufgabe schon vorher, da sind auch sehr kleine Werte echt.
+create or replace function public.zwip_minigame_floor(p_game text)
+returns integer
+language sql immutable set search_path = ''
+as $$
+  select case p_game
+    when 'wait' then 90
+    when 'mole' then 90
+    when 'dodge' then 60
+    when 'slice' then 120
+    else 0
+  end
+$$;
+
 -- Punkte einer Stufe
 create or replace function public.zwip_stage_points(p_stage integer, p_t integer, p_speed integer[])
 returns integer
@@ -276,10 +291,20 @@ as $$
     else '-infinity'::timestamptz end
 $$;
 
--- Schimpfwörter, Links, Telefonnummern und E-Mail-Adressen werden durch *** ersetzt
+-- Zusätzliche Filter-Wörter, die Admins in der App pflegen (deaktivieren statt löschen)
+create table if not exists public.bad_words (
+  word       text primary key check (word = lower(word) and char_length(word) between 2 and 40),
+  active     boolean not null default true,
+  added_by   uuid references public.profiles (id) on delete set null,
+  created_at timestamptz not null default now()
+);
+alter table public.bad_words enable row level security;
+revoke all on public.bad_words from anon, authenticated;
+
+-- Schimpfwörter (feste Liste + Admin-Liste), Links, Telefonnummern und E-Mail-Adressen werden durch *** ersetzt
 create or replace function public.zwip_clean_text(p text)
 returns text
-language plpgsql immutable set search_path = ''
+language plpgsql stable security definer set search_path = ''
 as $$
 declare
   norm text;
@@ -295,7 +320,7 @@ declare
     'bring dich um', 'kill dich', 'kill yourself', 'stirb'];
 begin
   if p is null then return null; end if;
-  -- gleiche Länge wie das Original, damit die Stellen passen (0→o, 1→i, 3→e, 4→a, 5→s, 7→t, @→a, $→s)
+  words := words || coalesce((select array_agg(word) from public.bad_words where active), array[]::text[]);
   norm := translate(lower(p), '013457@$', 'oieastas');
   foreach w in array words loop
     startp := 1;
@@ -329,7 +354,36 @@ returns public.clan_members
 language sql stable security definer set search_path = ''
 as $$ select * from public.zwip_cm where user_id = auth.uid() $$;
 
--- Wochen-Challenges: Ziele hängen nicht vom Zufall ab, damit alle Clans fair verglichen werden können
+-- Wochen-Challenges passend zur Clan-Größe (Ziele hängen nicht vom Zufall ab, damit alle Clans fair verglichen werden können).
+-- Die Größe wird beim ersten Aufruf der Woche festgehalten, damit sich Ziele nicht mitten in der Woche ändern.
+create table if not exists public.clan_week_size (
+  clan_id  uuid not null references public.clans (id) on delete cascade,
+  week     date not null,
+  members  integer not null,
+  primary key (clan_id, week)
+);
+alter table public.clan_week_size enable row level security;
+revoke all on public.clan_week_size from anon, authenticated;
+
+create or replace function public.zwip_size_factor(p_members integer)
+returns integer
+language sql immutable set search_path = ''
+as $$
+  select case
+    when p_members <= 3 then 1
+    when p_members <= 9 then 2
+    when p_members <= 24 then 5
+    when p_members <= 74 then 12
+    when p_members <= 199 then 30
+    else 60
+  end
+$$;
+
+create or replace function public.zwip_de_num(p bigint)
+returns text
+language sql immutable set search_path = ''
+as $$ select replace(to_char(p, 'FM999,999,999,999'), ',', '.') $$;
+
 create or replace function public.zwip_clan_challenges(p_clan uuid)
 returns jsonb
 language plpgsql security definer set search_path = ''
@@ -339,27 +393,37 @@ declare
   pts bigint;
   rnds bigint;
   active bigint;
+  size integer;
+  f integer;
+  act_goal integer;
   res jsonb := '[]'::jsonb;
   c record;
   prog bigint;
   done boolean;
 begin
+  insert into public.clan_week_size (clan_id, week, members)
+    select p_clan, wk::date, greatest(1, member_count) from public.clans where id = p_clan
+    on conflict do nothing;
+  select members into size from public.clan_week_size where clan_id = p_clan and week = wk::date;
+  size := coalesce(size, 1);
+  f := public.zwip_size_factor(size);
+  act_goal := greatest(1, ceil(size * 0.6)::integer);
+
   select coalesce(sum(xp) filter (where source = 'minigame'), 0), coalesce(sum(rounds), 0), count(distinct user_id)
     into pts, rnds, active
     from public.clan_xp_log where clan_id = p_clan and created_at >= wk and source = 'minigame';
   for c in
     select * from (values
-      ('points_1', 'Sammelt zusammen 25.000 Punkte', 'points', 25000, 1500),
-      ('points_2', 'Sammelt zusammen 100.000 Punkte', 'points', 100000, 5000),
-      ('points_3', 'Sammelt zusammen 500.000 Punkte', 'points', 500000, 20000),
-      ('rounds_1', 'Spielt zusammen 50 Runden', 'rounds', 50, 1000),
-      ('rounds_2', 'Spielt zusammen 500 Runden', 'rounds', 500, 8000),
-      ('active_1', '5 Mitglieder spielen diese Woche', 'active', 5, 2000)
-    ) v(key, title, metric, goal, reward)
+      ('points_1', 'points', 10000 * f, 600 * f),
+      ('points_2', 'points', 40000 * f, 2000 * f),
+      ('points_3', 'points', 200000 * f, 8000 * f),
+      ('rounds_1', 'rounds', 20 * f, 400 * f),
+      ('rounds_2', 'rounds', 200 * f, 3200 * f),
+      ('active_1', 'active', act_goal, 800 * f)
+    ) v(key, metric, goal, reward)
   loop
     prog := case c.metric when 'points' then pts when 'rounds' then rnds else active end;
     done := exists (select 1 from public.clan_challenge_done d where d.clan_id = p_clan and d.week = wk::date and d.key = c.key);
-    -- Ziel erreicht → einmalig Bonus-XP für den Clan
     if not done and prog >= c.goal then
       insert into public.clan_challenge_done (clan_id, week, key) values (p_clan, wk::date, c.key) on conflict do nothing;
       if found then
@@ -368,10 +432,16 @@ begin
       end if;
       done := true;
     end if;
-    res := res || jsonb_build_object('key', c.key, 'title', c.title, 'metric', c.metric, 'goal', c.goal,
-                                     'progress', least(prog, c.goal), 'reward', c.reward, 'done', done);
+    res := res || jsonb_build_object(
+      'key', c.key, 'metric', c.metric, 'goal', c.goal, 'progress', least(prog, c.goal), 'reward', c.reward, 'done', done,
+      'title', case c.metric
+                 when 'points' then 'Sammelt zusammen ' || public.zwip_de_num(c.goal) || ' Punkte'
+                 when 'rounds' then 'Spielt zusammen ' || public.zwip_de_num(c.goal) || ' Runden'
+                 else case when c.goal = 1 then 'Mindestens 1 Mitglied spielt diese Woche'
+                           else public.zwip_de_num(c.goal) || ' Mitglieder spielen diese Woche' end
+               end);
   end loop;
-  return jsonb_build_object('week_start', wk, 'week_end', wk + interval '7 days', 'items', res);
+  return jsonb_build_object('week_start', wk, 'week_end', wk + interval '7 days', 'items', res, 'size', size);
 end;
 $$;
 
@@ -486,7 +556,9 @@ declare
   sc integer;
   prev_score integer;
   clan_xp integer;
+  flag text;
 begin
+  perform public.zwip_check_ban(me);
   select * into run from public.minigame_runs where id = p_run and user_id = me for update;
   if run.id is null or run.status <> 'active' then
     raise exception 'run_not_active' using errcode = 'P0001';
@@ -520,9 +592,36 @@ begin
   end if;
 
   sc := public.zwip_run_score(run.game_id, p_steps);
+
+  -- Anti-Cheat: unmögliche Reaktionszeiten oder Dauer-Spielen → wird nicht gewertet, Admins prüfen
+  if exists (select 1 from jsonb_array_elements(p_steps) e(v)
+             where coalesce((v ->> 'ok')::boolean, false)
+               and coalesce((v ->> 't')::numeric, (v ->> 'ms')::numeric, 999999) < public.zwip_minigame_floor(run.game_id)) then
+    flag := 'hard:impossible_speed';
+  elsif (select count(*) from public.minigame_runs where user_id = me and status = 'finished'
+           and finished_at > now() - interval '1 hour') >= 150 then
+    flag := 'hard:too_many_runs';
+  elsif p_stage >= 20 and not exists (
+           select 1 from jsonb_array_elements(p_steps) with ordinality e(v, i)
+           where i <= p_stage and coalesce((v ->> 't')::numeric, (v ->> 'ms')::numeric, 999999) > (public.zwip_minigame_speed(run.game_id))[1]) then
+    -- Sehr langer Lauf, jede Stufe „sehr schnell“: zählt, wird aber zur Kontrolle markiert
+    flag := 'soft:perfect_run';
+  end if;
+
   update public.minigame_runs set status = 'finished', finished_at = now(), stage = p_stage,
-      total_ms = p_total_ms, steps = p_steps, score = sc
+      total_ms = p_total_ms, steps = p_steps, score = sc,
+      flagged = flag, review = case when flag is null then null else 'open' end
     where id = run.id;
+
+  if flag like 'hard:%' then
+    select * into b from public.minigame_bests where user_id = me and game_id = run.game_id;
+    return jsonb_build_object(
+      'stage', p_stage, 'total_ms', p_total_ms, 'score', sc, 'flagged', true, 'flag', flag,
+      'best_score', coalesce(b.best_score, 0), 'prev_best_score', coalesce(b.best_score, 0),
+      'best_stage', coalesce(b.best_stage, 0), 'best_ms', coalesce(b.best_ms, 0), 'plays', coalesce(b.plays, 0),
+      'is_record', false, 'rank', (select r.world_rank from public.zwip_mg_ranked(run.game_id) r where r.user_id = me),
+      'clan_xp', 0, 'total_players', (select count(*) from public.zwip_mg_ranked(run.game_id)));
+  end if;
 
   insert into public.minigame_bests (user_id, game_id) values (me, run.game_id)
     on conflict (user_id, game_id) do nothing;
@@ -546,7 +645,7 @@ begin
     'stage', p_stage, 'total_ms', p_total_ms, 'score', sc,
     'best_score', b.best_score, 'prev_best_score', prev_score,
     'best_stage', b.best_stage, 'best_ms', b.best_ms, 'plays', b.plays,
-    'is_record', record, 'rank', my_rank, 'clan_xp', clan_xp,
+    'is_record', record, 'rank', my_rank, 'clan_xp', clan_xp, 'flagged', false,
     'total_players', (select count(*) from public.zwip_mg_ranked(run.game_id)));
 end;
 $$;
@@ -701,6 +800,7 @@ language plpgsql security definer set search_path = ''
 as $$
 declare me uuid := public.zwip_me(); nm text := btrim(coalesce(p_name, '')); cid uuid;
 begin
+  perform public.zwip_check_ban(me);
   perform public.zwip_need_name(me);
   if exists (select 1 from public.zwip_cm where user_id = me) then
     raise exception 'already_in_clan' using errcode = 'P0001';
@@ -797,6 +897,7 @@ language plpgsql security definer set search_path = ''
 as $$
 declare me uuid := public.zwip_me(); c public.clans; nm text;
 begin
+  perform public.zwip_check_ban(me);
   nm := public.zwip_need_name(me);
   select * into c from public.zwip_clans where id = p_clan;
   if c.id is null then raise exception 'clan_not_found' using errcode = 'P0001'; end if;
@@ -833,6 +934,7 @@ language plpgsql security definer set search_path = ''
 as $$
 declare me uuid := public.zwip_me(); m public.clan_members; other uuid; cnt integer;
 begin
+  perform public.zwip_check_ban(me);
   select * into m from public.zwip_cm where user_id = me;
   if m.user_id is null then raise exception 'not_in_clan' using errcode = 'P0001'; end if;
   select id into other from public.profiles where lower(username) = lower(btrim(coalesce(p_username, '')));
@@ -1051,6 +1153,7 @@ language plpgsql security definer set search_path = ''
 as $$
 declare me uuid := public.zwip_me(); m public.clan_members; txt text; k text;
 begin
+  perform public.zwip_check_ban(me);
   select * into m from public.zwip_cm where user_id = me;
   if m.user_id is null then raise exception 'not_in_clan' using errcode = 'P0001'; end if;
   if m.muted_until is not null and m.muted_until > now() then raise exception 'muted' using errcode = 'P0001'; end if;
@@ -1198,6 +1301,7 @@ $$;
 -- #####################################################################
 
 revoke all on function public.zwip_minigame_speed(text) from public, anon, authenticated;
+revoke all on function public.zwip_minigame_floor(text) from public, anon, authenticated;
 revoke all on function public.zwip_stage_points(integer, integer, integer[]) from public, anon, authenticated;
 revoke all on function public.zwip_run_score(text, jsonb) from public, anon, authenticated;
 revoke all on function public.zwip_mg_ranked(text) from public, anon, authenticated;
@@ -1211,6 +1315,7 @@ revoke all on function public.zwip_clean_text(text) from public, anon, authentic
 revoke all on function public.zwip_quick_message(integer) from public, anon, authenticated;
 revoke all on function public.zwip_my_clan_member() from public, anon, authenticated;
 revoke all on function public.zwip_clan_challenges(uuid) from public, anon, authenticated;
+revoke all on function public.zwip_size_factor(integer) from public, anon, authenticated;
 revoke all on function public.zwip_clan_on_run(uuid, integer) from public, anon, authenticated;
 revoke all on function public.zwip_clan_json(uuid) from public, anon, authenticated;
 revoke all on function public.zwip_clan_system(uuid, text) from public, anon, authenticated;

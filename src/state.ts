@@ -18,6 +18,12 @@ export interface State {
   name: string;
   nameSet: boolean;
   muted: boolean;
+  /** Vibration bei Treffern, Fehlern und Rekorden */
+  vibrate: boolean;
+  /** Ohne Konto unterwegs */
+  guest: boolean;
+  /** Highscores im Gast-Modus (nur auf diesem Gerät, zählen nicht für Ranglisten) */
+  guestBests: Record<string, { score: number; stage: number; ms: number; plays: number }>;
   daily: Record<number, DayResult>;
   streak: { count: number; last: number; best: number };
   best: { daily: number; free: number; endless: number };
@@ -74,6 +80,9 @@ export function freshState(): State {
     name: randomName(),
     nameSet: false,
     muted: false,
+    vibrate: true,
+    guest: false,
+    guestBests: {},
     daily: {},
     streak: { count: 0, last: -99, best: 0 },
     best: { daily: 0, free: 0, endless: 0 },

@@ -163,7 +163,11 @@ export interface MgResultView {
   totalPlayers: number | null;
   saving?: boolean;
   error?: string;
+  /** Hinweis ohne Fehler-Rahmen (z. B. Lauf wird geprüft) */
+  note?: string;
   canRetry?: boolean;
+  /** Gast-Modus: Ergebnis nur lokal */
+  guest?: boolean;
 }
 
 export function minigameResultHtml(v: MgResultView): string {
@@ -183,7 +187,11 @@ export function minigameResultHtml(v: MgResultView): string {
       ${v.record ? `<div class="mg-res-badge">🎉 Neuer Highscore!</div>` : v.prevBest ? `<div class="mg-res-sub">Dein Highscore: ${fmtScore(v.prevBest)}</div>` : ""}
     </section>
     ${
-      v.saving
+      v.guest
+        ? `<div class="notice guest" role="status"><b>👋 Als Gast gespielt</b><span>Dein Highscore bleibt auf diesem Gerät. <button class="link-btn inline" type="button" data-act="guest-register">Konto erstellen</button>, um in die Rangliste zu kommen.</span></div>`
+        : v.note
+        ? `<div class="notice warn" role="status"><b>🕵️ Wird geprüft</b><span>${esc(v.note)}</span></div>`
+        : v.saving
         ? `<div class="tr-status">Wird gespeichert…</div>`
         : v.error
           ? `<div class="inline-error" role="alert">Konnte nicht gespeichert werden. ${esc(v.error)}${v.canRetry ? ` <button class="link-btn" data-act="mgretry">Nochmal senden</button>` : ""}</div>`

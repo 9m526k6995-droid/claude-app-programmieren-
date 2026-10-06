@@ -395,3 +395,25 @@ export async function authedRpc(fn: string, args: Record<string, unknown> = {}):
   }
   return res;
 }
+
+/**
+ * Konto endgültig löschen (über die Supabase Edge Function „delete-account“, die mit Server-Rechten läuft).
+ * Danach ist man abgemeldet.
+ */
+export async function deleteAccount(): Promise<void> {
+  if (!authConfigured) fail("not_configured");
+  if (session && session.expiresAt - 30 < Date.now() / 1000) await refresh().catch(() => {});
+  if (!session) fail("invalid_credentials");
+  let res: Response;
+  try {
+    res = await fetch(`${CONFIG.supabaseUrl}/functions/v1/delete-account`, {
+      method: "POST",
+      headers: { apikey: CONFIG.supabaseAnonKey, Authorization: `Bearer ${session!.accessToken}`, "Content-Type": "application/json" },
+      body: "{}",
+    });
+  } catch {
+    fail("network");
+  }
+  if (!res!.ok) fail("unknown");
+  setSession(null);
+}

@@ -171,7 +171,9 @@ Unter dem Tab **🛡️ Clan** kann jeder einen eigenen Clan gründen oder einem
 - Pro Spieler **genau ein Clan**, höchstens **500 Mitglieder** pro Clan. Rollen: 👑 Leiter und Mitglieder. Verlässt der Leiter den Clan, übernimmt automatisch das aktivste Mitglied; der letzte macht das Licht aus (Clan wird aufgelöst).
 - **XP & Level:** Jeder Punkt aus Minigames wird Clan-XP. Level L braucht `1000·(L−1)²` XP (Level 2 = 1.000, Level 5 = 16.000, Level 10 = 81.000 …, höchstens 50).
 - **Freischaltungen:** neue Wappen ab Level 3, 5, 8 und 12, neue Farben ab Level 2, 4 und 7, Rahmen Silber (5), Gold (10), Diamant (15) und Legende (20, animiert).
-- **Wochen-Challenges** (jeden Montag neu, mit Fortschrittsbalken und Bonus-XP): 25.000 / 100.000 / 500.000 Punkte, 50 / 500 Runden, 5 aktive Mitglieder.
+- **Wochen-Challenges** (jeden Montag neu, mit Fortschrittsbalken und Bonus-XP), passend zur Clan-Größe: ein Mini-Clan (1–3) braucht 10.000 / 40.000 / 200.000 Punkte und 20 / 200 Runden, größere Clans ein Vielfaches (×2 ab 4, ×5 ab 10, ×12 ab 25, ×30 ab 75, ×60 ab 200 Mitgliedern). Dazu: 60 % der Mitglieder spielen in der Woche. Die Größe wird am Wochenanfang festgehalten.
+- **Clan-Ligen:** 🥉 Bronze, 🥈 Silber (ab 5.000), 🥇 Gold (15.000), 💠 Platin (40.000), 💎 Diamant (100.000), 👑 Champion (250.000) – gemessen in **XP pro aktivem Mitglied** pro Woche, damit kleine und große Clans gleiche Chancen haben. Die Liga der Woche ergibt sich aus der Vorwoche; in der Übersicht sieht man Platz, Tabelle und ob es nächste Woche hoch- oder runtergeht.
+- **Einladungslink:** Jedes Mitglied kann einen Link (`?clan=CODE`) teilen. Wer ihn öffnet, kann direkt beitreten – auch bei „Nur Einladung“. Der Leiter kann jederzeit einen neuen Link erstellen, dann gilt der alte nicht mehr.
 - **Ranglisten:** Clans nach XP von heute, dieser Woche, diesem Monat, der Saison (Quartal) oder gesamt; im Clan „Wer trägt am meisten bei?“ (Woche/Monat/gesamt).
 - **Chat:** freie Nachrichten (max. 200 Zeichen) und 7 Schnellnachrichten („GG! 🎉“, „Wer spielt mit? 🎮“ …).
   - Schimpfwörter (auch mit Zahlen wie „F1CK“), Links, E-Mail-Adressen und Telefonnummern werden automatisch durch `***` ersetzt.
@@ -179,6 +181,24 @@ Unter dem Tab **🛡️ Clan** kann jeder einen eigenen Clan gründen oder einem
   - **Melden:** Ab 3 Meldungen – oder sofort, wenn der Leiter meldet – wird eine Nachricht ausgeblendet. Eigene Nachrichten löschen, als Leiter jede.
   - **Stummschalten:** Der Leiter kann Mitglieder 1 Stunde bis 7 Tage im Chat stummschalten. Jeder kann einzelne Spieler für sich selbst ausblenden.
 - Im **Profil** jedes Spielers steht sein Clan (antippen öffnet die Clan-Seite).
+
+### Gast-Modus, Einführung, Erinnerungen
+
+- **Ohne Konto spielen:** Im Startmenü „Erst mal ohne Konto spielen“. Daily, Training, Endlos und alle Minigames gehen sofort; Highscores bleiben auf dem Gerät. Ranglisten, Trophäen, Freunde und Clans zeigen „Konto erstellen“.
+- **Kurze Einführung** (4 Karten) beim ersten Öffnen – überspringbar, kommt nur einmal.
+- **Push-Erinnerungen** im Profil: Uhrzeit wählbar (8–21 Uhr), höchstens 1–2 am Tag, nie zwischen 22 und 8 Uhr, nur wenn die Daily noch fehlt. Die zweite Erinnerung kommt nur, wenn sonst eine Streak verloren ginge. Auf dem iPhone nur, wenn ZWIP auf dem Home-Bildschirm liegt.
+- **Vibration** bei Treffern, Fehlern und Rekorden – im Profil abschaltbar.
+
+### Rechtliches, Sicherheit & Moderation
+
+- **Impressum, Datenschutzerklärung, Nutzungsbedingungen** unter `#/rechtliches/…` – auch ohne Anmeldung erreichbar (Startbildschirm und Profil). Die Angaben zum Betreiber stehen als Platzhalter in `src/legal.ts` (`OPERATOR`) und müssen vor dem Start ausgefüllt werden.
+- **Altersabfrage** bei der Registrierung. Unter 16 muss ein Häkchen bestätigen, dass die Eltern einverstanden sind (Art. 8 DSGVO). Bestehende Konten bestätigen das einmalig beim nächsten Öffnen.
+- **Meine Daten herunterladen** (alles als JSON) und **Konto löschen** (mit „LÖSCHEN“ bestätigen) im Profil. Gelöscht wird über die Edge Function `delete-account`.
+- **Spieler melden** im Profil: Name, Profilbild, verdächtiger Highscore oder Sonstiges.
+- **Anti-Cheat:** unmögliche Reaktionszeiten oder über 150 Runden pro Stunde werden nicht gewertet und landen zur Prüfung beim Admin. Sehr lange perfekte Läufe zählen, werden aber zur Kontrolle markiert.
+- **Admin-Seite** (`#/admin`, nur für E-Mails in `zwip_admins`): gemeldete Nachrichten mit Verlauf, Spieler-Meldungen, verdächtige Läufe; Spieler suchen, verwarnen, 24 h / 7 Tage / dauerhaft sperren, Name oder Profilbild zurücksetzen, Clan-Namen zurücksetzen; Schimpfwortfilter erweitern.
+- Gesperrte Spieler sehen oben einen Hinweis und können weiter spielen, aber nicht chatten, keine Clans gründen und nichts in die Ranglisten einreichen.
+- Die Schrift liegt auf dem eigenen Server (keine Google Fonts).
 
 ### Social-Funktionen
 
@@ -264,6 +284,11 @@ supabase/minigames.sql Minigame-Läufe und Ranglisten pro Spiel
 supabase/social.sql   Badges (neue Freundesanfragen usw.)
 supabase/clans.sql    Highscores (Punkte) für Minigames + Clans (XP, Level, Ranglisten, Challenges, Chat mit Filter)
 supabase/regions.sql  Land im Konto (1× im Monat änderbar) und Länder-Ranglisten
+supabase/moderation.sql  Alter/Zustimmung, Melden, Sperren, Anti-Cheat, Admin, Daten-Export
+supabase/functions/delete-account  Edge Function: Konto löschen
+supabase/clanplus.sql  Clan-Einladungslinks und Clan-Ligen
+supabase/push.sql      Push-Erinnerungen (Abos, Ruhezeit, max. 2 am Tag) + push-cron.sql
+supabase/functions/push-send  Edge Function: Erinnerungen verschicken
 src/games.ts / games2.ts / games3.ts  Die 27 Minispiele (games2 = dritte, games3 = vierte Welle), gameKit.ts = gemeinsame Bausteine
 supabase/schema.sql   Alte Tages-Punkteliste (wird nicht mehr genutzt)
 tests/                Logik-, Bestenlisten- und Browser-Tests

@@ -1,3 +1,12 @@
+/* Schrift liegt auf dem eigenen Server (kein Google Fonts → keine Daten an Google, DSGVO) */
+@font-face {
+  font-family: "Bricolage Grotesque";
+  src: url("fonts/bricolage-bold.woff") format("woff");
+  font-weight: 500 900;
+  font-style: normal;
+  font-display: swap;
+}
+
 :root {
   --ink: #16101f;
   --ink-2: #221933;
@@ -5144,4 +5153,353 @@ html {
 }
 .country-lock {
   margin: 8px 0;
+}
+
+/* ===================== Rechtliches, Konto, Moderation ===================== */
+.legal-nav {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+  margin-bottom: 12px;
+}
+.legal-nav a {
+  padding: 6px 12px;
+  border-radius: 999px;
+  background: var(--ink-2);
+  color: var(--muted);
+  font-weight: 800;
+  font-size: 13px;
+  text-decoration: none;
+}
+.legal-nav a.on {
+  color: var(--ink);
+  background: var(--lime);
+}
+.legal {
+  line-height: 1.55;
+  font-size: 15px;
+}
+.legal h2 {
+  margin: 4px 0 8px;
+  font-size: 24px;
+}
+.legal h3 {
+  margin: 18px 0 4px;
+  font-size: 16px;
+  color: var(--lime);
+}
+.legal p,
+.legal ul {
+  margin: 6px 0;
+}
+.legal ul {
+  padding-left: 20px;
+}
+.legal li {
+  margin: 4px 0;
+}
+.legal a,
+.legal-links a,
+.check a,
+.notice a {
+  color: var(--lime);
+}
+mark.ph {
+  background: var(--yellow);
+  color: var(--ink);
+  border-radius: 4px;
+  padding: 0 4px;
+}
+.legal-screen {
+  padding: 16px;
+}
+.legal-links {
+  margin-top: 12px;
+  text-align: center;
+  font-size: 13px;
+  color: var(--muted);
+}
+.start-legal {
+  margin-top: 24px;
+}
+.guest-btn {
+  display: block;
+  margin: 14px auto 0;
+  font-size: 15px;
+}
+.check {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: 10px;
+  align-items: start;
+  margin: 10px 0 2px;
+  font-size: 14px;
+  line-height: 1.4;
+  text-align: left;
+}
+.check input {
+  flex: none;
+  width: 22px;
+  height: 22px;
+  min-height: 0;
+  padding: 0;
+  box-shadow: none;
+  accent-color: var(--lime);
+  margin-top: 1px;
+}
+.check[hidden] {
+  display: none;
+}
+.terms-gate {
+  display: grid;
+  gap: 8px;
+}
+.modal-bg.locked {
+  backdrop-filter: blur(6px);
+}
+.notice {
+  display: grid;
+  gap: 4px;
+  margin-bottom: 12px;
+  padding: 12px 14px;
+  border-radius: 16px;
+  font-size: 14px;
+}
+.notice.ban {
+  background: rgba(255, 61, 90, 0.16);
+  box-shadow: inset 0 0 0 2px var(--red);
+}
+.notice.warn {
+  background: rgba(255, 210, 61, 0.14);
+  box-shadow: inset 0 0 0 2px var(--yellow);
+}
+.account-sec {
+  display: grid;
+  gap: 10px;
+}
+.report-link {
+  justify-self: center;
+  font-size: 13px;
+}
+.report-reasons {
+  display: grid;
+  gap: 8px;
+}
+.adm-over {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 8px;
+  margin-bottom: 12px;
+}
+.adm-stat {
+  display: grid;
+  justify-items: center;
+  gap: 2px;
+  padding: 10px 6px;
+  border-radius: 16px;
+  background: var(--ink-2);
+  text-align: center;
+}
+.adm-stat b {
+  font-size: 22px;
+}
+.adm-stat small {
+  font-size: 11px;
+  color: var(--muted);
+  font-weight: 700;
+}
+.adm-stat.hot {
+  box-shadow: inset 0 0 0 2px var(--red);
+}
+.adm-card {
+  display: grid;
+  gap: 8px;
+  margin-bottom: 10px;
+  padding: 12px 14px;
+  border-radius: 18px;
+  background: var(--ink-2);
+}
+.adm-head small {
+  display: block;
+  color: var(--muted);
+  font-size: 12px;
+}
+.adm-quote {
+  margin: 0;
+  padding: 8px 10px;
+  border-radius: 12px;
+  background: var(--ink);
+  overflow-wrap: anywhere;
+}
+.adm-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+.adm-avatar {
+  width: 96px;
+  height: 96px;
+  border-radius: 20px;
+  object-fit: cover;
+}
+.adm-ctx {
+  display: grid;
+  gap: 6px;
+  max-height: 60dvh;
+  overflow-y: auto;
+}
+.adm-ctx-row {
+  padding: 8px 10px;
+  border-radius: 12px;
+  background: var(--ink);
+  overflow-wrap: anywhere;
+}
+.adm-ctx-row.target {
+  box-shadow: inset 0 0 0 2px var(--red);
+}
+#adm-q {
+  width: 100%;
+  margin-bottom: 10px;
+}
+
+/* ---------- Gast-Modus & Einführung ---------- */
+.notice.guest {
+  background: rgba(198, 255, 61, 0.1);
+  box-shadow: inset 0 0 0 2px rgba(198, 255, 61, 0.55);
+}
+.link-btn.inline {
+  display: inline;
+  padding: 0;
+  color: var(--lime);
+  text-decoration: underline;
+  font-size: inherit;
+}
+.guest-wall {
+  display: grid;
+  gap: 10px;
+  justify-items: center;
+  text-align: center;
+  padding: 22px 16px;
+  margin: 8px 0 14px;
+  border-radius: var(--radius);
+  background: var(--ink-2);
+}
+.guest-wall h2 {
+  margin: 0;
+  font-size: 22px;
+}
+.guest-wall p {
+  margin: 0;
+  max-width: 34ch;
+}
+.guest-wall .btn {
+  width: 100%;
+  max-width: 300px;
+}
+.tour {
+  display: grid;
+  gap: 10px;
+  text-align: center;
+}
+.tour-ico {
+  font-size: 56px;
+  line-height: 1;
+  animation: tour-pop 0.35s ease-out;
+}
+.tour p {
+  margin: 0;
+  line-height: 1.45;
+}
+.tour-dots {
+  display: flex;
+  justify-content: center;
+  gap: 6px;
+  margin: 4px 0;
+}
+.tour-dots i {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--ink-3);
+  transition: width 0.2s, background 0.2s;
+}
+.tour-dots i.on {
+  width: 22px;
+  border-radius: 4px;
+  background: var(--lime);
+}
+@keyframes tour-pop {
+  from {
+    transform: scale(0.6);
+    opacity: 0;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .tour-ico {
+    animation: none;
+  }
+}
+
+/* ---------- Clan-Liga & Einladungslink ---------- */
+.clan-league:empty {
+  display: none;
+}
+.league-card {
+  display: grid;
+  grid-template-columns: auto 1fr auto;
+  gap: 12px;
+  align-items: center;
+  width: 100%;
+  padding: 14px;
+  border-radius: var(--radius);
+  background: var(--ink-2);
+  box-shadow: inset 0 0 0 2px var(--lc, var(--violet));
+  color: var(--paper);
+  text-align: left;
+}
+.league-emo {
+  font-size: 38px;
+  line-height: 1;
+}
+.league-txt {
+  display: grid;
+  gap: 2px;
+  min-width: 0;
+}
+.league-txt small {
+  color: var(--muted);
+  font-size: 12.5px;
+}
+.league-txt b {
+  font-size: 16px;
+}
+.league-list {
+  max-height: 52vh;
+  overflow: auto;
+}
+.inv-link {
+  margin-top: 14px;
+  display: grid;
+  gap: 8px;
+}
+.inv-link .row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+#inv-link-url {
+  word-break: break-all;
+  margin: 0;
+}
+#inv-link-url:empty {
+  display: none;
+}
+.clan-invite {
+  display: grid;
+  gap: 8px;
+  justify-items: center;
+  text-align: center;
+}
+.clan-invite .notice {
+  text-align: left;
 }
