@@ -903,12 +903,20 @@ try {
   // ================= TROPHÄEN =================
   const tP = A.page;
   await tP.goto(`${BASE}?e2e=1`);
-  await tP.waitForSelector('.trophy-pill, [data-auth="login"]');
+  await tP.waitForSelector('.trophy-pill, [data-auth="login"]').catch(async (e) => {
+    await tP.screenshot({ path: `${SHOTS}/zz-no-pill.png` });
+    console.log("Seite nach goto:", tP.url(), (await tP.evaluate(() => document.body.innerHTML)).slice(0, 400).replace(/\n/g, " "));
+    throw e;
+  });
   if (await tP.isVisible('[data-auth="login"]')) {
     await tP.click('[data-auth="login"]', { force: true });
     await fillAuth(tP, "lena@test.de", "geheim123");
   }
-  await tP.waitForSelector(".trophy-pill");
+  await tP.waitForSelector(".trophy-pill").catch(async (e) => {
+    await tP.screenshot({ path: `${SHOTS}/zz-no-pill.png` });
+    console.log("Kein Trophäen-Knopf:", (await tP.evaluate(() => document.body.innerText)).slice(0, 300).replace(/\n/g, " | "));
+    throw e;
+  });
   await tP.waitForFunction(() => document.getElementById("trophy-count")?.textContent === "0", null, { timeout: 12000 });
   check(true, "Flamme oben links zeigt Trophäenstand (0) aus der Datenbank");
   await tP.click(".trophy-pill", { force: true });
@@ -1563,6 +1571,15 @@ try {
   await G.page.click('[data-tab="profil"]', { force: true });
   await G.page.waitForSelector("#set-vibrate");
   check(true, "Vibration lässt sich in den Einstellungen umschalten");
+  check((await G.page.locator("#set-music").isChecked()) && (await G.page.locator("#set-sfx").isChecked()), "Musik und Soundeffekte getrennt schaltbar (Standard: an)");
+  check((await G.page.inputValue("#set-vol")) === "50", "Musik-Lautstärke standardmäßig leise (50 %)");
+  await G.page.fill("#set-vol", "30");
+  await G.page.dispatchEvent("#set-vol", "change");
+  await G.page.uncheck("#set-music", { force: true });
+  const ms = await G.page.evaluate(() => JSON.parse(localStorage.getItem("zwip:v1") || "{}"));
+  check(ms.music === false && Math.abs(ms.musicVol - 0.3) < 0.01, "Musik-Einstellungen werden gespeichert");
+  check(await G.page.isDisabled("#set-vol"), "Musik aus → Lautstärke-Regler gesperrt");
+  await G.page.check("#set-music", { force: true });
   await G.page.screenshot({ path: `${SHOTS}/g1-gast-profil.png`, fullPage: true });
   await G.page.reload();
   await G.page.waitForSelector(".notice.guest");

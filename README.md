@@ -190,7 +190,9 @@ Unter dem Tab **🛡️ Clan** kann jeder einen eigenen Clan gründen oder einem
 - **Ohne Konto spielen:** Im Startmenü „Erst mal ohne Konto spielen“. Daily, Training, Endlos und alle Minigames gehen sofort; Highscores bleiben auf dem Gerät. Ranglisten, Trophäen, Freunde und Clans zeigen „Konto erstellen“.
 - **Kurze Einführung** (4 Karten) beim ersten Öffnen – überspringbar, kommt nur einmal.
 - **Push-Erinnerungen** im Profil: Uhrzeit wählbar (8–21 Uhr), höchstens 1–2 am Tag, nie zwischen 22 und 8 Uhr, nur wenn die Daily noch fehlt. Die zweite Erinnerung kommt nur, wenn sonst eine Streak verloren ginge. Auf dem iPhone nur, wenn ZWIP auf dem Home-Bildschirm liegt.
-- **Vibration** bei Treffern, Fehlern und Rekorden – im Profil abschaltbar.
+- **Vibration** bei Treffern, Fehlern und Rekorden – in den Einstellungen abschaltbar.
+- **Hintergrundmusik** (`src/music.ts`): chilliger Lo-Fi-Sound in C-Dur (wie der ZWIP-Sound), 84 BPM, komplett live per Web Audio erzeugt – keine Musikdateien. Akkordfolgen und Melodie-Bausteine wechseln zufällig, damit es nie nach Schleife klingt. In Menüs normal, während einer Runde leiser und ohne Melodie, bei Rhythmus-/Timing-Spielen (Takt, Warten, Stopp, Uhr, Ampel, Stapel) nur die Fläche ohne Beat. Bei Ergebnis, Rekord und Liga-Aufstieg wird sie kurz leiser. Startet nach dem ersten Tippen, pausiert im Hintergrund. In den Einstellungen: Musik an/aus, Lautstärke (Standard 50 %), Soundeffekte getrennt.
+- **ZWIP-Sound**: „zwiiip“ + Erkennungsmelodie bei Anmeldung, Rekord und Liga-Aufstieg, das „zwiiip“ bei jedem „Los!“.
 
 ### Rechtliches, Sicherheit & Moderation
 
