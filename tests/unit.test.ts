@@ -467,3 +467,34 @@ test("Belohnung ohne Item zeigt Coins oder Gems", () => {
   assert.match(rewardInner({ item: null, coins: 0, gems: 20 }).label, /20 Gems/);
   assert.match(rewardInner({ item: { id: "a", kind: "avatar", name: "Fuchs <3", rarity: "common", data: { e: "🦊" } }, coins: 0, gems: 0 }).label, /Fuchs &lt;3/);
 });
+
+// ---------- Hintergrundmusik ----------
+import { CHORDS, PROGRESSIONS, MOTIFS, PENTA, nextProgression, pentaMidi, BPM, RHYTHM_GAMES } from "../src/music";
+
+test("Musik: alles in C-Dur (passt zum ZWIP-Sound), Tempo mit Drive", () => {
+  const cDur = new Set([0, 2, 4, 5, 7, 9, 11]);
+  for (const [name, notes] of Object.entries(CHORDS)) for (const n of notes) assert.ok(cDur.has(n % 12), `${name}: Ton ${n} nicht in C-Dur`);
+  for (const p of PROGRESSIONS) {
+    assert.equal(p.length, 4);
+    for (const c of p) assert.ok(CHORDS[c], `unbekannter Akkord ${c}`);
+  }
+  for (let i = -3; i < 12; i++) assert.ok(PENTA.includes(((pentaMidi(i) % 12) + 12) % 12), "Melodie nur aus der Pentatonik");
+  for (const m of MOTIFS) for (const [beat, , len] of m) assert.ok(beat >= 0 && beat + len <= 4.01, "Motiv passt in einen Takt");
+  assert.ok(BPM >= 98 && BPM <= 110, "lockeres, aber nicht müdes Tempo (98–110 BPM)");
+});
+
+test("Musik: Akkordfolge wechselt, nie zweimal dieselbe hintereinander", () => {
+  let prev = 0;
+  const seen = new Set<number>();
+  let r = 1;
+  const rand = () => ((r = (r * 16807) % 2147483647) / 2147483647);
+  for (let i = 0; i < 200; i++) {
+    const n = nextProgression(prev, rand);
+    assert.notEqual(n, prev);
+    assert.ok(n >= 0 && n < PROGRESSIONS.length);
+    seen.add(n);
+    prev = n;
+  }
+  assert.equal(seen.size, PROGRESSIONS.length, "alle Folgen kommen vor");
+  for (const id of ["beat", "wait", "ampel"]) assert.ok(RHYTHM_GAMES.has(id), `${id} ist ein Rhythmus-Spiel (Musik ohne Beat)`);
+});

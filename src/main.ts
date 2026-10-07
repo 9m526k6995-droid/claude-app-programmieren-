@@ -12,6 +12,7 @@ import {
   type DayResult,
 } from "./state";
 import { createSfx } from "./sound";
+import { createMusic, RHYTHM_GAMES } from "./music";
 import { GAMES, GAME_BY_ID, type Outcome, type MicroGame } from "./games";
 import { buildRounds, endlessRound, roundPoints, tileOf, verdict, ROUNDS, idsForDay, GAME_IDS, type Mode, type RoundSpec } from "./run";
 import {
@@ -100,7 +101,28 @@ declare const __ZWIP_SINGLE__: boolean;
 
 const app = document.getElementById("app")!;
 let S: State = loadState();
-const sfx = createSfx(S.muted, S.vibrate);
+const sfxRaw = createSfx(S.muted || !S.sfxOn, S.vibrate);
+const music = createMusic({ on: !S.muted && S.music, volume: S.musicVol });
+/** Soundeffekte; bei den großen Momenten wird die Musik kurz leiser, damit der ZWIP-Sound wirkt */
+const sfx = {
+  ...sfxRaw,
+  win() {
+    music.duck();
+    sfxRaw.win();
+  },
+  jingle() {
+    music.duck(3.2);
+    sfxRaw.jingle();
+  },
+};
+/** Ton-Einstellungen anwenden (🔇 schaltet alles stumm) */
+function applySound() {
+  sfxRaw.setMuted(S.muted || !S.sfxOn);
+  music.set({ on: !S.muted && S.music, volume: S.musicVol });
+}
+// Musik startet beim ersten Tippen (Browser erlauben Ton erst nach einer Berührung)
+document.addEventListener("pointerdown", () => music.unlock(), { once: true, capture: true });
+document.addEventListener("keydown", () => music.unlock(), { once: true, capture: true });
 
 /** Gast-Modus: spielen ohne Konto (nur lokal, keine Ranglisten) */
 const isGuest = () => !currentUser() && S.guest;
@@ -340,6 +362,7 @@ function navigate(path: string) {
 /** Seitengerüst mit Kopfzeile und Tab-Leiste zeichnen, liefert den Inhaltsbereich. */
 function shell(tab: TabId | null, title: string, body: string, opts: { back?: string; titleHtml?: string; cls?: string; above?: string; action?: string } = {}): HTMLElement {
   clearTimers();
+  music.setMode("menu");
   const { above, ...rest } = opts;
   app.innerHTML = shellHtml({ tab, title, flame: myTrophyLabel(), streak: streakInfo(), body, ...rest });
   const page = document.getElementById("page")!;
@@ -620,6 +643,8 @@ async function showIntro(holder: HTMLElement, spec: RoundSpec, label: string) {
  * keine ablaufende Zeit davor. Abbrechen (✕) beendet sie sofort.
  */
 async function explainGame(holder: HTMLElement, g: MicroGame, label: string) {
+  // Während der Aufgabe: Musik leiser und ruhiger; Rhythmus-/Timing-Spiele ganz ohne Beat
+  music.setMode(RHYTHM_GAMES.has(g.id) ? "rhythm" : "round");
   const intro = document.createElement("div");
   intro.className = "intro explain";
   intro.style.background = g.bg;
@@ -918,6 +943,7 @@ function payloadFor(d: ResultData): ChallengePayload {
 }
 
 function results(d: ResultData) {
+  music.setMode("menu");
   clearTimers();
   if (pending && d.vs) pending = null;
   const score = sumPoints(d.rounds);
@@ -1276,21 +1302,46 @@ function settingsScreen() {
 
 function soundTogglesHtml(): string {
   const canVibrate = typeof navigator !== "undefined" && typeof navigator.vibrate === "function";
-  return `<label class="toggle"><input type="checkbox" id="set-sound" ${S.muted ? "" : "checked"}> Ton an <button class="link-btn inline" type="button" id="set-jingle">🔊 ZWIP-Sound anhören</button></label>
-      <label class="toggle"><input type="checkbox" id="set-vibrate" ${S.vibrate ? "checked" : ""} ${canVibrate ? "" : "disabled"}> Vibration an${canVibrate ? "" : ` <small class="muted">(auf diesem Gerät nicht möglich)</small>`}</label>`;
+  const vol = Math.round(S.musicVol * 100);
+  return `${S.muted ? `<p class="notice warn small">🔇 Gerade ist alles stumm. <button class="link-btn inline" type="button" id="set-unmute">Ton wieder an</button></p>` : ""}
+      <label class="toggle"><input type="checkbox" id="set-music" ${S.music ? "checked" : ""}> 🎵 Musik</label>
+      <label class="lbl vol-row" for="set-vol"><span>Lautstärke Musik</span><b id="set-vol-n">${vol} %</b></label>
+      <input type="range" id="set-vol" min="0" max="100" step="5" value="${vol}" ${S.music ? "" : "disabled"} aria-label="Lautstärke der Musik">
+      <label class="toggle"><input type="checkbox" id="set-sfx" ${S.sfxOn ? "checked" : ""}> 🔔 Soundeffekte <button class="link-btn inline" type="button" id="set-jingle">ZWIP-Sound anhören</button></label>
+      <label class="toggle"><input type="checkbox" id="set-vibrate" ${S.vibrate ? "checked" : ""} ${canVibrate ? "" : "disabled"}> 📳 Vibration${canVibrate ? "" : ` <small class="muted">(auf diesem Gerät nicht möglich)</small>`}</label>`;
 }
 
 function bindSoundToggles(page: HTMLElement) {
+  page.querySelector("#set-unmute")?.addEventListener("click", () => {
+    S.muted = false;
+    save();
+    applySound();
+    renderRoute();
+  });
   page.querySelector("#set-jingle")?.addEventListener("click", (e) => {
     e.preventDefault();
-    if (S.muted) return toast("Erst den Ton anschalten 🔇");
+    if (S.muted || !S.sfxOn) return toast("Erst die Soundeffekte anschalten 🔇");
     sfx.unlock();
     sfx.jingle();
   });
-  page.querySelector<HTMLInputElement>("#set-sound")?.addEventListener("change", (e) => {
-    S.muted = !(e.target as HTMLInputElement).checked;
-    sfx.setMuted(S.muted);
+  page.querySelector<HTMLInputElement>("#set-music")?.addEventListener("change", (e) => {
+    S.music = (e.target as HTMLInputElement).checked;
     save();
+    applySound();
+    const v = page.querySelector<HTMLInputElement>("#set-vol");
+    if (v) v.disabled = !S.music;
+  });
+  const vol = page.querySelector<HTMLInputElement>("#set-vol");
+  vol?.addEventListener("input", () => {
+    S.musicVol = Number(vol.value) / 100;
+    page.querySelector("#set-vol-n")!.textContent = `${vol.value} %`;
+    applySound();
+  });
+  vol?.addEventListener("change", () => save());
+  page.querySelector<HTMLInputElement>("#set-sfx")?.addEventListener("change", (e) => {
+    S.sfxOn = (e.target as HTMLInputElement).checked;
+    save();
+    applySound();
   });
   page.querySelector<HTMLInputElement>("#set-vibrate")?.addEventListener("change", (e) => {
     S.vibrate = (e.target as HTMLInputElement).checked;
@@ -1505,6 +1556,7 @@ async function startMinigame(id: string) {
 }
 
 function showMinigameResult(v: MgResultView) {
+  music.setMode("menu");
   clearTimers();
   app.innerHTML = minigameResultHtml(v);
   if (!v.saving && v.record && v.stage > 0) {
@@ -1641,7 +1693,7 @@ app.addEventListener("click", async (e) => {
       return showStart();
     case "sound":
       S.muted = !S.muted;
-      sfx.setMuted(S.muted);
+      applySound();
       save();
       btn.textContent = S.muted ? "🔇" : "🔊";
       return;
@@ -1921,6 +1973,7 @@ function trophyResultHandlers() {
 
 async function submitTrophyRun() {
   if (!trophyRun) return;
+  music.setMode("menu");
   const { start, tasks } = trophyRun;
   const local = scoreRound(tasks, start.trophies);
   const h = trophyResultHandlers();
@@ -2032,7 +2085,7 @@ onAuthChange((s) => {
 document.addEventListener(
   "pointerdown",
   (e) => {
-    if (S.muted || !canPlay()) return;
+    if (S.muted || !S.sfxOn || !canPlay()) return;
     if ((e.target as HTMLElement).closest("[data-act], .explain-ok, button, a, input")) return;
     sfx.unlock();
     sfx.jingle();

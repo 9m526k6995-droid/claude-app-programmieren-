@@ -18,6 +18,11 @@ export interface State {
   name: string;
   nameSet: boolean;
   muted: boolean;
+  /** Hintergrundmusik an/aus und Lautstärke (0–1) */
+  music: boolean;
+  musicVol: number;
+  /** Soundeffekte an/aus (unabhängig von der Musik) */
+  sfxOn: boolean;
   /** Vibration bei Treffern, Fehlern und Rekorden */
   vibrate: boolean;
   /** Ohne Konto unterwegs */
@@ -80,6 +85,9 @@ export function freshState(): State {
     name: randomName(),
     nameSet: false,
     muted: false,
+    music: true,
+    musicVol: 0.5,
+    sfxOn: true,
     vibrate: true,
     guest: false,
     guestBests: {},
