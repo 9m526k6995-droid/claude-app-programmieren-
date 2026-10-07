@@ -775,8 +775,7 @@ begin
 end;
 $$;
 
-drop trigger if exists zwip_sp_trophy_round on public.trophy_rounds;
-create trigger zwip_sp_trophy_round after update of status on public.trophy_rounds
+create or replace trigger zwip_sp_trophy_round after update of status on public.trophy_rounds
   for each row execute function public.zwip_sp_trg_trophy();
 
 -- Minigame-Lauf: zählt ab Stufe 1, "Sieg" ab Stufe 5. Läufe, die der Anti-Cheat hart markiert, zählen nicht.
@@ -795,8 +794,7 @@ begin
 end;
 $$;
 
-drop trigger if exists zwip_sp_minigame_run on public.minigame_runs;
-create trigger zwip_sp_minigame_run after update of status on public.minigame_runs
+create or replace trigger zwip_sp_minigame_run after update of status on public.minigame_runs
   for each row execute function public.zwip_sp_trg_minigame();
 
 -- Daily: kommt über mark_daily_played (profiles.last_daily_day). Nur die heutige Daily (±1 Tag Zeitzone) zählt.
@@ -816,8 +814,7 @@ begin
 end;
 $$;
 
-drop trigger if exists zwip_sp_daily on public.profiles;
-create trigger zwip_sp_daily after update of last_daily_day on public.profiles
+create or replace trigger zwip_sp_daily after update of last_daily_day on public.profiles
   for each row execute function public.zwip_sp_trg_daily();
 
 -- Neuer Freund (angenommene Anfrage) zählt für beide
@@ -836,8 +833,7 @@ begin
 end;
 $$;
 
-drop trigger if exists zwip_sp_friend on public.friendships;
-create trigger zwip_sp_friend after insert or update of status on public.friendships
+create or replace trigger zwip_sp_friend after insert or update of status on public.friendships
   for each row execute function public.zwip_sp_trg_friend();
 
 -- =====================================================================
