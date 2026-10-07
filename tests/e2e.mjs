@@ -212,8 +212,13 @@ const check = (cond, msg) => {
   if (!cond) failures++;
 };
 
-async function newPage({ tour = false } = {}) {
+async function newPage({ tour = false, music = false } = {}) {
   const ctx = await browser.newContext({ ...devices["iPhone 13"], hasTouch: true });
+  // Musik kostet im Test-Browser Rechenzeit und macht Timing-Spiele (z. B. Maulwurf) wackelig → nur im eigenen Test an
+  if (!music)
+    await ctx.addInitScript(() => {
+      if (!localStorage.getItem("zwip:v1")) localStorage.setItem("zwip:v1", JSON.stringify({ v: 1, music: false, deviceId: crypto.randomUUID() }));
+    });
   // Die Einführung beim ersten Öffnen wird nur im eigenen Test gezeigt
   if (!tour) await ctx.addInitScript(() => localStorage.setItem("zwip:tour", "1"));
   await ctx.route(/fonts\.(googleapis|gstatic)\.com/, (r) => r.abort());
@@ -1550,7 +1555,7 @@ try {
   check(true, "Zurück zum Startmenü");
 
   // Gast-Modus + Einführung
-  const G = await newPage({ tour: true });
+  const G = await newPage({ tour: true, music: true });
   await G.page.goto(`${BASE}?e2e=1`);
   await G.page.waitForSelector('[data-auth="guest"]');
   await G.page.click('[data-auth="guest"]', { force: true });
