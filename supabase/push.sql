@@ -155,9 +155,9 @@ begin
   select d.id, d.endpoint, d.p256dh, d.auth,
          case when d.kind = 2 or (d.daily_streak >= 2 and d.last_daily_day = d.today_n - 1)
               then '🔥 Deine ' || d.daily_streak || '-Tage-Streak!'
-              else '⚡ Daily #' || d.today_n || ' ist da' end,
+              else '⚡ Die neue Daily ist da' end,
          case when d.kind = 2 then 'Nur noch heute – spiel die Daily, sonst ist die Streak weg.'
-              when d.daily_streak >= 2 and d.last_daily_day = d.today_n - 1 then 'Daily #' || d.today_n || ' wartet. 10 Blitz-Aufgaben, 2 Minuten – halt die Streak am Leben!'
+              when d.daily_streak >= 2 and d.last_daily_day = d.today_n - 1 then 'Die Daily von heute wartet. 10 Blitz-Aufgaben, 2 Minuten – halt die Streak am Leben!'
               else '10 Blitz-Aufgaben, für alle gleich. Schaffst du heute mehr als deine Freunde?' end,
          './#/start',
          'daily-' || d.today_n

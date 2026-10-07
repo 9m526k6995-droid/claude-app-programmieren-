@@ -72,6 +72,13 @@ export function gridText(rounds: number[]): string {
   return rows.join("\n");
 }
 
+/** Datum der Daily kurz, z. B. „7. Okt.“ (statt einer Nummer) */
+function dayShort(day?: number): string {
+  if (day === undefined) return "";
+  const d = new Date(Date.UTC(2026, 8, 30) + day * 86400000);
+  return new Date(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate()).toLocaleDateString("de-DE", { day: "numeric", month: "short" });
+}
+
 export function shareText(opts: {
   mode: Mode;
   day?: number;
@@ -86,7 +93,7 @@ export function shareText(opts: {
   if (opts.mode === "endless") {
     lines.push(`ZWIP Endlos ⚡ ${opts.endlessRounds} Runden · ${opts.score} Punkte`);
   } else {
-    const label = opts.mode === "daily" || (opts.mode === "challenge" && opts.day) ? `#${opts.day}` : "Training";
+    const label = opts.mode === "daily" || (opts.mode === "challenge" && opts.day) ? `Daily ${dayShort(opts.day)}` : "Training";
     lines.push(`ZWIP ${label} ⚡ ${opts.score}/1000`);
     lines.push(gridText(opts.rounds));
   }

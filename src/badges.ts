@@ -11,6 +11,20 @@ let busy = false;
 let knownAccepted = -1;
 
 export function applyBadges() {
+  // Freunde & Clan teilen sich einen Tab – dort steht die Summe, im Umschalter die einzelnen Zahlen
+  TAB_BADGES.social = (TAB_BADGES.freunde ?? 0) + (TAB_BADGES.clan ?? 0);
+  document.querySelectorAll<HTMLElement>(".social-seg [data-seg]").forEach((a) => {
+    const n = TAB_BADGES[a.dataset.seg as TabId] ?? 0;
+    let b = a.querySelector<HTMLElement>(".seg-badge");
+    if (n > 0) {
+      if (!b) {
+        b = document.createElement("b");
+        b.className = "seg-badge";
+        a.append(b);
+      }
+      b.textContent = n > 99 ? "99+" : String(n);
+    } else b?.remove();
+  });
   document.querySelectorAll<HTMLElement>(".tabbar .tab[data-tab]").forEach((t) => {
     const n = TAB_BADGES[t.dataset.tab as TabId] ?? 0;
     let b = t.querySelector<HTMLElement>(".tab-badge");

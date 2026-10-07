@@ -5503,3 +5503,180 @@ mark.ph {
 .clan-invite .notice {
   text-align: left;
 }
+
+/* ---------- Neue Struktur: 4 Tabs, Kopfzeile mit 🔥 Streak + 🏆 Trophäen ---------- */
+.tabbar {
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+}
+.tabbar .tab {
+  font-size: 12px;
+}
+.hud-chips {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex: none;
+  margin-left: auto;
+}
+.pagebar .page-title {
+  min-width: 0;
+}
+.pagebar .page-title .logo.small {
+  display: inline-flex;
+  font-size: 34px;
+  line-height: 1;
+}
+/* Trophäen: Gold */
+.pagebar .trophy-pill {
+  background: linear-gradient(135deg, #ffd23d, #ff9f1c);
+  color: var(--ink);
+  gap: 4px;
+}
+.trophy-pill .tp-cup {
+  font-size: 19px;
+}
+/* Streak: grau = keine, flackernd orange = heute noch offen, hell = erledigt */
+.streak-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  min-height: 40px;
+  padding: 4px 11px 4px 8px;
+  border-radius: 999px;
+  font-size: 16px;
+  font-weight: 900;
+  font-variant-numeric: tabular-nums;
+  color: var(--paper);
+  background: var(--ink-3);
+  box-shadow: var(--shadow);
+}
+.streak-chip:active {
+  transform: translateY(3px);
+  box-shadow: 0 2px 0 rgba(0, 0, 0, 0.35);
+}
+.streak-chip .fire {
+  font-size: 19px;
+}
+.streak-chip.s-none .fire {
+  filter: grayscale(1);
+  opacity: 0.55;
+}
+.streak-chip.s-none b {
+  color: var(--muted);
+}
+.streak-chip.s-risk {
+  box-shadow: var(--shadow), inset 0 0 0 2px #ff8a3d;
+}
+.streak-chip.s-risk .fire {
+  animation: flicker 0.9s ease-in-out infinite;
+}
+.streak-chip.s-done {
+  background: linear-gradient(135deg, #ff8a3d, #ff3d6e);
+}
+@media (prefers-reduced-motion: reduce) {
+  .streak-chip.s-risk .fire {
+    animation: none;
+  }
+}
+.gear-btn {
+  width: 40px;
+  height: 40px;
+  font-size: 20px;
+  text-decoration: none;
+}
+@media (max-width: 360px) {
+  .pagebar .page-title {
+    font-size: 22px;
+  }
+  .streak-chip,
+  .pagebar .trophy-pill {
+    padding-left: 7px;
+    padding-right: 9px;
+  }
+}
+
+/* Umschalter Freunde / Clan */
+.social-seg {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 4px;
+  padding: 4px;
+  margin-bottom: 14px;
+  border-radius: 16px;
+  background: var(--ink-2);
+}
+.seg-btn {
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  min-height: 44px;
+  border-radius: 12px;
+  color: var(--muted);
+  font-weight: 800;
+  text-decoration: none;
+}
+.seg-btn.on {
+  background: var(--ink-3);
+  color: var(--paper);
+  box-shadow: inset 0 0 0 2px rgba(255, 255, 255, 0.08);
+}
+.seg-badge {
+  min-width: 20px;
+  height: 20px;
+  padding: 0 6px;
+  border-radius: 999px;
+  background: var(--pink);
+  color: #fff;
+  font-size: 12px;
+  line-height: 20px;
+  text-align: center;
+}
+
+/* Start = Spielen */
+.more-modes {
+  display: grid;
+  gap: 10px;
+}
+.more-modes .mode-list {
+  margin: 0;
+}
+.play-btn.nudge {
+  animation: nudge 0.5s ease-in-out 2;
+}
+@keyframes nudge {
+  25% {
+    transform: translateX(-6px);
+  }
+  75% {
+    transform: translateX(6px);
+  }
+}
+
+/* Profil → Einstellungen */
+.settings-link {
+  display: grid;
+  grid-template-columns: auto 1fr auto;
+  gap: 12px;
+  align-items: center;
+  padding: 14px 16px;
+  border-radius: var(--radius);
+  background: var(--ink-2);
+  color: var(--paper);
+  text-decoration: none;
+}
+.sl-ico {
+  font-size: 26px;
+}
+.sl-text {
+  display: grid;
+  gap: 2px;
+}
+.sl-text small {
+  color: var(--muted);
+}
+.explain-count b {
+  font-weight: 700;
+  opacity: 0.85;
+}

@@ -12,7 +12,7 @@ import {
   type DayResult,
 } from "./state";
 import { createSfx } from "./sound";
-import { GAMES, GAME_BY_ID, EXPLAIN_MS, type Outcome, type MicroGame } from "./games";
+import { GAMES, GAME_BY_ID, type Outcome, type MicroGame } from "./games";
 import { buildRounds, endlessRound, roundPoints, tileOf, verdict, ROUNDS, idsForDay, GAME_IDS, type Mode, type RoundSpec } from "./run";
 import {
   encodeChallenge,
@@ -78,7 +78,7 @@ import { renderStart, renderAuthForm } from "./startmenu";
 import { openTour, guestWallHtml, guestBannerHtml } from "./onboarding";
 import { pushSettingsHtml, mountPushSettings, dropPushOnLogout } from "./push";
 import { mountMyProfile, openPlayerProfile } from "./profileUi";
-import { routeParts, go, shellHtml, replaceRoute, type TabId } from "./nav";
+import { routeParts, go, shellHtml, replaceRoute, TAB_BADGES, type TabId } from "./nav";
 import {
   minigameGridHtml,
   minigameDetailHtml,
@@ -337,14 +337,45 @@ function navigate(path: string) {
 }
 
 /** Seitengerüst mit Kopfzeile und Tab-Leiste zeichnen, liefert den Inhaltsbereich. */
-function shell(tab: TabId | null, title: string, body: string, opts: { back?: string; titleHtml?: string; cls?: string } = {}): HTMLElement {
+function shell(tab: TabId | null, title: string, body: string, opts: { back?: string; titleHtml?: string; cls?: string; above?: string; action?: string } = {}): HTMLElement {
   clearTimers();
-  app.innerHTML = shellHtml({ tab, title, flame: myTrophyLabel(), body, ...opts });
+  const { above, ...rest } = opts;
+  app.innerHTML = shellHtml({ tab, title, flame: myTrophyLabel(), streak: streakInfo(), body, ...rest });
   const page = document.getElementById("page")!;
+  // Feste Leiste über dem Inhalt (z. B. Umschalter Freunde/Clan) – wird von nachladenden Seiten nicht überschrieben
+  if (above) page.insertAdjacentHTML("beforebegin", above);
   // Hinweis (Gast, Sperre, Verwarnung) über dem Inhalt – Seiten, die später nachladen, überschreiben ihn so nicht
   const notice = isGuest() ? guestBannerHtml() : noticeHtml(myTerms);
   if (notice) page.insertAdjacentHTML("beforebegin", notice);
   return page;
+}
+
+/** Streak für die 🔥-Anzeige oben rechts */
+function streakInfo(): { n: number; state: "none" | "risk" | "done" } {
+  const t = today();
+  const n = currentStreak(S, t);
+  return { n, state: S.daily[t] ? "done" : n > 0 ? "risk" : "none" };
+}
+
+/** Name der Daily ohne Nummer: heute „Daily“, sonst mit Datum */
+function dailyName(day: number): string {
+  const t = today();
+  if (day === t) return "Daily";
+  if (day === t - 1) return "Daily von gestern";
+  return `Daily vom ${dateOfDay(day).toLocaleDateString("de-DE", { day: "numeric", month: "short" })}`;
+}
+
+// ---------- Freunde & Clan: gemeinsamer Tab mit Umschalter ----------
+
+let lastSocial: "freunde" | "clan" = "freunde";
+
+function socialSegHtml(active: "freunde" | "clan"): string {
+  lastSocial = active;
+  const item = (id: "freunde" | "clan", icon: string, label: string) => {
+    const n = TAB_BADGES[id] ?? 0;
+    return `<a href="#/${id}" class="seg-btn ${id === active ? "on" : ""}" data-seg="${id}" ${id === active ? `aria-current="page"` : ""}>${icon} ${label}${n > 0 ? `<b class="seg-badge">${n > 99 ? "99+" : n}</b>` : ""}</a>`;
+  };
+  return `<nav class="social-seg" aria-label="Freunde oder Clan">${item("freunde", "👥", "Freunde")}${item("clan", "🛡️", "Clan")}</nav>`;
 }
 
 // ---------- Nutzungsbedingungen, Alter, Sperren ----------
@@ -378,7 +409,7 @@ function legalScreen(page: string | undefined) {
   const p = (page && page in LEGAL_TITLES ? page : "impressum") as LegalPage;
   const body = `${legalNavHtml(p)}${legalHtml(p)}`;
   if (canPlay()) {
-    shell(null, LEGAL_TITLES[p], body, { back: "profil" });
+    shell(null, LEGAL_TITLES[p], body, { back: isGuest() ? "profil" : "einstellungen" });
     return;
   }
   clearTimers();
@@ -413,7 +444,12 @@ function renderRoute() {
   }
   switch (parts[0]) {
     case "spielen":
-      return playMenuScreen();
+      return startScreen();
+    case "social":
+      replaceRoute(lastSocial);
+      return renderRoute();
+    case "einstellungen":
+      return isGuest() ? guestProfileScreen() : settingsScreen();
     case "minigames":
       return parts[1] && GAME_BY_ID[parts[1]] ? minigameDetailScreen(parts[1]) : minigamesScreen();
     case "ranglisten":
@@ -459,18 +495,17 @@ window.addEventListener("hashchange", () => {
 function startScreen() {
   const t = today();
   const played = S.daily[t];
-  const streak = currentStreak(S, t);
 
   let main: string;
   if (pending) {
     main = `<div class="duel-card pop-in">
         <div class="duel-ico">⚔️</div>
-        <div><b>${esc(pending.n)}</b> fordert dich heraus<br><span class="muted">${sumPoints(pending.r)} Punkte · ${pending.m === "d" ? `Daily #${pending.d}` : "Training"}</span></div>
+        <div><b>${esc(pending.n)}</b> fordert dich heraus<br><span class="muted">${sumPoints(pending.r)} Punkte · ${pending.m === "d" ? dailyName(pending.d!) : "Training"}</span></div>
       </div>
       <button class="play-btn" data-act="duel"><span class="play-ico">⚔️</span><span><b>Duell starten</b><small>Gleiche Runde. Wer holt mehr?</small></span></button>`;
   } else if (played) {
     main = `<div class="done-card">
-        <div class="done-top"><span>Daily #${t}</span><b>${played.score}</b></div>
+        <div class="done-top"><span>Daily von heute ✅</span><b>${played.score}</b></div>
         ${miniGrid(played.rounds)}
         <div class="done-actions">
           <button class="btn primary sm" data-act="share-today">Teilen 📤</button>
@@ -479,22 +514,28 @@ function startScreen() {
         <div class="muted next">Neue Daily in <b id="countdown">${fmtCountdown(msUntilNextDay())}</b></div>
       </div>`;
   } else {
-    main = `<button class="play-btn" data-act="daily"><span class="play-ico">▶</span><span><b>Daily #${t} spielen</b><small>10 Blitz-Challenges · für alle gleich</small></span></button>`;
+    main = `<button class="play-btn" data-act="daily"><span class="play-ico">▶</span><span><b>Daily spielen</b><small>10 Blitz-Aufgaben · für alle gleich · jeden Tag neu</small></span></button>`;
   }
 
   shell(
     "start",
-    "Start",
+    "Spielen",
     `
-    <section class="start-hero">
-      <h2 class="logo small" aria-label="ZWIP"><span>Z</span><span>W</span><span>I</span><span>P</span></h2>
-      <p class="tagline">10 Blitz-Challenges · jeden Tag neu</p>
-    </section>
     <section class="start-main">${main}</section>
     <section class="week-wrap">
-      <div class="week-head"><h2 class="sec-title">Diese Woche</h2><span class="streak-mini ${streak ? "on" : ""}">📆 ${streak} ${streak === 1 ? "Tag" : "Tage"} am Stück</span></div>
+      <div class="week-head"><h2 class="sec-title">Diese Woche</h2></div>
       <div class="week" aria-label="Diese Woche">${weekStrip(t)}</div>
+    </section>
+    <section class="more-modes">
+      <h2 class="sec-title">Weitere Modi</h2>
+      <div class="mode-list">
+        ${modeCard({ act: "tmode", icon: "🏆", title: "Trophäen-Modus", desc: "15 Aufgaben – sammle Trophäen und steig in den Ligen auf.", meta: `<b>${myTrophyLabel()}</b>`, cls: "c-trophy" })}
+        ${modeCard({ href: "#/minigames", icon: "🎮", title: "Minigames", desc: "Ein Spiel, Stufe für Stufe schwerer.", meta: `<em class="tag lime">${GAMES.length}</em>`, cls: "c-mini" })}
+        ${modeCard({ act: "free", icon: "🏋️", title: "Training", desc: "10 zufällige Aufgaben, so oft du willst.", meta: S.best.free ? `Best <b>${S.best.free}</b>` : "" })}
+        ${modeCard({ act: "endless", icon: "♾️", title: "Endlos", desc: "Bis zum ersten Fehler.", meta: S.best.endless ? `Best <b>${S.best.endless}</b>` : "" })}
+      </div>
     </section>`,
+    { titleHtml: `<span class="logo small" aria-label="ZWIP"><span>Z</span><span>W</span><span>I</span><span>P</span></span>` },
   );
 
   if (played && !pending) {
@@ -520,24 +561,6 @@ function modeCard(o: { act?: string; href?: string; icon: string; title: string;
   return o.href
     ? `<a class="mode-card ${o.cls ?? ""}" href="${o.href}">${inner}</a>`
     : `<button class="mode-card ${o.cls ?? ""}" data-act="${o.act}">${inner}</button>`;
-}
-
-function playMenuScreen() {
-  const t = today();
-  const played = S.daily[t];
-  shell(
-    "spielen",
-    "Spielen",
-    `
-    <p class="page-intro muted">Such dir aus, wie du spielen willst.</p>
-    <div class="mode-list">
-      ${modeCard({ act: "daily", icon: "⚡", title: `Daily #${t}`, desc: played ? "Heute schon gespielt – morgen gibt's eine neue." : "10 Challenges – für alle gleich, jeden Tag neu.", meta: played ? `<b>${played.score}</b>` : `<em class="tag">Neu</em>`, cls: "c-daily" })}
-      ${modeCard({ act: "tmode", icon: "🏆", title: "Trophäen-Modus", desc: "15 Aufgaben – sammle Trophäen und steig in den Ligen auf.", meta: `<b>🔥 ${myTrophyLabel()}</b>`, cls: "c-trophy" })}
-      ${modeCard({ href: "#/minigames", icon: "🎮", title: "Minigames", desc: "Jedes Spiel einzeln – Stufe für Stufe schwerer.", meta: `<em class="tag lime">${GAMES.length} Spiele</em>`, cls: "c-mini" })}
-      ${modeCard({ act: "free", icon: "🏋️", title: "Training", desc: "10 zufällige Challenges – so oft du willst.", meta: S.best.free ? `Best <b>${S.best.free}</b>` : "" })}
-      ${modeCard({ act: "endless", icon: "♾️", title: "Endlos", desc: "Bis zum ersten Fehler.", meta: S.best.endless ? `Best <b>${S.best.endless}</b>` : "" })}
-    </div>`,
-  );
 }
 
 // ---------- Spielablauf ----------
@@ -567,19 +590,21 @@ function playScreen(mode: Mode, total: number) {
   </div>`;
 }
 
-/** Erklärzeit vor jeder Aufgabe. In automatischen Tests kürzer (per ?explain=ms einstellbar). */
-const EXPLAIN = E2E ? Number(params.get("explain") ?? 400) : EXPLAIN_MS;
+/**
+ * Automatische Tests: Erklärkarte startet nach ?explain=ms von selbst (Standard 400 ms), damit die Test-Bots nicht
+ * jedes Mal tippen müssen. Mit ?explain=manual verhält sie sich wie für echte Spieler. Echte Spieler: nie von selbst.
+ */
+const AUTO_EXPLAIN = E2E && params.get("explain") !== "manual" ? Number(params.get("explain") ?? 400) : 0;
 
 async function showIntro(holder: HTMLElement, spec: RoundSpec, label: string) {
   return explainGame(holder, GAME_BY_ID[spec.gameId], label);
 }
 
 /**
- * Erklärkarte vor jeder Aufgabe (alle Modi und Minigames): Wer verstanden hat, tippt auf „OK, los!“ und es geht
- * sofort los. Sonst startet die Aufgabe nach EXPLAIN Millisekunden (4 s) von selbst. Abbrechen (✕) beendet sie sofort.
+ * Erklärkarte vor jeder Aufgabe (alle Modi und Minigames): Die Aufgabe startet erst, wenn man auf „Los!“ tippt –
+ * keine ablaufende Zeit davor. Abbrechen (✕) beendet sie sofort.
  */
 async function explainGame(holder: HTMLElement, g: MicroGame, label: string) {
-  const secs = Math.ceil(EXPLAIN / 1000);
   const intro = document.createElement("div");
   intro.className = "intro explain";
   intro.style.background = g.bg;
@@ -591,17 +616,13 @@ async function explainGame(holder: HTMLElement, g: MicroGame, label: string) {
     <div class="intro-title">${g.title}</div>
     <p class="explain-text">${g.howto}</p>
     <div class="intro-hint">💡 ${g.hint}</div>
-    <button class="explain-ok" type="button">OK, los! ⚡</button>
-    <div class="explain-count" aria-live="polite">
-      <span class="explain-bar"><i style="animation-duration:${EXPLAIN}ms"></i></span>
-      <b>Startet von selbst in <span class="explain-n">${secs}</span> s</b>
-    </div>`;
+    <button class="explain-ok" type="button">Los! ⚡</button>
+    <div class="explain-count" aria-live="polite"><b>Die Zeit läuft erst, wenn du tippst.</b></div>`;
   holder.replaceChildren(intro);
   sfx.tick();
-  const n = intro.querySelector<HTMLElement>(".explain-n")!;
   const ok = intro.querySelector<HTMLButtonElement>(".explain-ok")!;
+  ok.focus({ preventScroll: true });
   const t0 = performance.now();
-  let pressed = false;
   await new Promise<void>((res) => {
     let iv = 0;
     const done = () => {
@@ -611,30 +632,24 @@ async function explainGame(holder: HTMLElement, g: MicroGame, label: string) {
     ok.addEventListener("pointerdown", (e) => {
       e.preventDefault();
       e.stopPropagation();
-      pressed = true;
       done();
     });
     ok.addEventListener("keydown", (e) => {
       if (e.key === "Enter" || e.key === " ") {
         e.preventDefault();
-        pressed = true;
         done();
       }
     });
     iv = window.setInterval(() => {
-      const left = EXPLAIN - (performance.now() - t0);
-      if (aborted || left <= 0) return done();
-      const s = String(Math.ceil(left / 1000));
-      if (n.textContent !== s) n.textContent = s;
-    }, 100);
+      if (aborted || (AUTO_EXPLAIN && performance.now() - t0 >= AUTO_EXPLAIN)) done();
+    }, 50);
   });
   if (aborted) return;
   ok.disabled = true;
   ok.classList.add("go");
-  ok.textContent = "Los! ⚡";
   intro.querySelector(".explain-count")!.classList.add("hidden");
   sfx.tick();
-  await sleep(pressed ? 220 : 350);
+  await sleep(220);
 }
 
 interface RoundResult extends Outcome {
@@ -897,7 +912,7 @@ function results(d: ResultData) {
   const label = endless
     ? "Endlos"
     : d.day !== undefined
-      ? `Daily #${d.day}${d.day !== t ? " (Duell)" : ""}`
+      ? `${dailyName(d.day)}${d.day !== t ? " (Duell)" : ""}`
       : d.mode === "challenge"
         ? "Duell · Training"
         : "Training";
@@ -1067,7 +1082,7 @@ async function boardsScreen(sub = "welt", gameId?: string) {
       "ranglisten",
       "Ranglisten",
       `${segHtml(sub)}
-      <p class="page-intro muted">Daily #${t} – alle, deren Duell-Links du gespielt hast.</p>
+      <p class="page-intro muted">Daily von heute – alle, deren Duell-Links du gespielt hast.</p>
       <div id="list" class="list"></div>
       <section class="add-card">
         <h2 class="sec-title">Crew erweitern</h2>
@@ -1146,7 +1161,7 @@ async function boardsScreen(sub = "welt", gameId?: string) {
 // ---------- Freunde ----------
 
 function clanScreen(sub?: string, arg?: string) {
-  const page = shell("clan", "Clan", "", { back: sub === "c" ? "ranglisten/clans" : undefined });
+  const page = sub === "c" ? shell("clan", "Clan", "", { back: "ranglisten/clans" }) : shell("clan", "Freunde & Clan", "", { above: socialSegHtml("clan") });
   void renderClan(page, sub, arg, {
     hasName: () => Boolean(myProfile?.username),
     askName: (then) => askName(then),
@@ -1161,7 +1176,7 @@ function clanScreen(sub?: string, arg?: string) {
 }
 
 function friendsScreen() {
-  const page = shell("freunde", "Freunde", "");
+  const page = shell("freunde", "Freunde & Clan", "", { above: socialSegHtml("freunde") });
   renderFriends(page, {
     hasName: () => Boolean(myProfile?.username),
     askName: (then) => askName(then),
@@ -1178,21 +1193,12 @@ function profileScreen() {
     "profil",
     "Profil",
     `<div class="pf" id="pf-root" aria-busy="true"><div class="empty">Lädt…</div></div>
-    <section class="card-sec settings">
-      <h2 class="sec-title">Einstellungen</h2>
-      <label class="lbl" for="set-name">Name für Duell-Links</label>
-      <div class="row"><input id="set-name" maxlength="20" value="${esc(S.name)}" autocomplete="nickname"><button class="btn sm" id="set-save" type="button">Speichern</button></div>
-      ${soundTogglesHtml()}
-    </section>
-    ${pushSettingsHtml()}
-    ${countrySettingsHtml()}
-    ${accountSectionHtml(Boolean(myTerms?.is_admin))}
-    <section class="card-sec how">
-      <h2 class="sec-title">So geht ZWIP</h2>
-      <p>Jeden Tag gibt es eine Daily mit 10 Blitz-Challenges – für alle gleich. Vor jeder Aufgabe kommt eine kurze Erklärung – mit „OK, los!“ geht's sofort weiter. Schnell + richtig = mehr Punkte (max. 1000).</p>
-      <p>Im Trophäen-Modus sammelst du Trophäen für die Weltrangliste, bei den Minigames spielst du ein Spiel Stufe für Stufe – mit eigener Rangliste.</p>
-      <p class="muted">Keine Werbung, keine Lootboxen.</p>
-    </section>`,
+    <a class="settings-link" href="#/einstellungen">
+      <span class="sl-ico" aria-hidden="true">⚙️</span>
+      <span class="sl-text"><b>Einstellungen</b><small>Ton, Vibration, Erinnerungen, Land, deine Daten</small></span>
+      <i class="mc-go" aria-hidden="true">›</i>
+    </a>`,
+    { action: `<a class="icon-btn gear-btn" href="#/einstellungen" aria-label="Einstellungen">⚙️</a>` },
   );
   mountMyProfile(page.querySelector<HTMLElement>("#pf-root")!, {
     email: currentUser()?.email ?? "",
@@ -1205,6 +1211,30 @@ function profileScreen() {
       toast("Du bist abgemeldet 👋");
     },
   });
+}
+
+/** Einstellungen: alles, was man einstellt, an einem Ort – sortiert nach Themen */
+function settingsScreen() {
+  const page = shell(
+    "profil",
+    "Einstellungen",
+    `<section class="card-sec settings">
+      <h2 class="sec-title">Spiel</h2>
+      ${soundTogglesHtml()}
+      <label class="lbl" for="set-name">Name für Duell-Links</label>
+      <div class="row"><input id="set-name" maxlength="20" value="${esc(S.name)}" autocomplete="nickname"><button class="btn sm" id="set-save" type="button">Speichern</button></div>
+    </section>
+    ${pushSettingsHtml()}
+    ${countrySettingsHtml()}
+    ${accountSectionHtml(Boolean(myTerms?.is_admin))}
+    <section class="card-sec how">
+      <h2 class="sec-title">So geht ZWIP</h2>
+      <p>Jeden Tag gibt es eine Daily mit 10 Blitz-Aufgaben – für alle gleich. Vor jeder Aufgabe kommt eine kurze Erklärung, los geht's erst, wenn du auf „Los“ tippst. Schnell + richtig = mehr Punkte (max. 1000).</p>
+      <p>Im Trophäen-Modus sammelst du Trophäen für die Weltrangliste, bei den Minigames spielst du ein Spiel Stufe für Stufe – mit eigener Rangliste.</p>
+      <p class="muted">Keine Werbung, keine Lootboxen.</p>
+    </section>`,
+    { back: "profil" },
+  );
   void mountCountrySettings(page);
   void mountPushSettings(page);
   bindAccountSection(page, () => showStart());
@@ -1322,7 +1352,7 @@ function mountRanking(scopeEl: HTMLElement, listEl: HTMLElement, id: string) {
 }
 
 function minigamesScreen() {
-  const page = shell("spielen", "Minigames", `<p class="page-intro muted">Such dir ein Spiel aus. Jede Stufe wird schwerer – ein Fehler und der Lauf ist vorbei.</p><div id="mg-grid">${minigameGridHtml(mgBests)}</div>`, { back: "spielen" });
+  const page = shell("spielen", "Minigames", `<p class="page-intro muted">Such dir ein Spiel aus. Jede Stufe wird schwerer – ein Fehler und der Lauf ist vorbei.</p><div id="mg-grid">${minigameGridHtml(mgBests)}</div>`, { back: "start" });
   void loadMgBests().then((b) => {
     const grid = page.querySelector("#mg-grid");
     if (grid?.isConnected && b) grid.innerHTML = minigameGridHtml(b);
@@ -1564,6 +1594,14 @@ app.addEventListener("click", async (e) => {
       return;
     case "profile":
       return navigate("profil");
+    case "streak": {
+      const st = streakInfo();
+      if (st.state === "done") return void toast(`🔥 ${st.n} ${st.n === 1 ? "Tag" : "Tage"} am Stück – morgen geht's weiter!`);
+      if (routeParts()[0] !== "start") return navigate("start");
+      toast(st.n ? `🔥 Spiel die Daily, sonst ist deine ${st.n}-Tage-Streak weg!` : "🔥 Spiel die Daily und starte deine Streak!");
+      document.querySelector(".play-btn")?.classList.add("nudge");
+      return;
+    }
     case "guest-exit":
       S.guest = false;
       save();
@@ -1603,7 +1641,7 @@ app.addEventListener("click", async (e) => {
       if (!lastResult) return;
       const d = lastResult;
       const blob = await storyImage({
-        title: d.day !== undefined ? `Daily #${d.day}` : "Training",
+        title: d.day !== undefined ? dailyName(d.day) : "Training",
         score: sumPoints(d.rounds),
         rounds: d.rounds,
         verdict: verdict(sumPoints(d.rounds)),

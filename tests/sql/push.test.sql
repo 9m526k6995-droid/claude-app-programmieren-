@@ -39,7 +39,7 @@ reset role;
 create temp table t_due as select * from public.zwip_push_due();
 select t_assert((select count(*) from t_due) = 1, 'Genau eine Erinnerung fällig (zur Wunschzeit, tagsüber)');
 select t_assert((select endpoint from t_due) = 'https://push.example/1', 'Nachts wird niemand geweckt (Ruhezeit 22–8 Uhr)');
-select t_assert((select title from t_due) like '⚡ Daily #%', 'Text: Daily ist da');
+select t_assert((select title from t_due) = '⚡ Die neue Daily ist da', 'Text: Daily ist da (ohne Nummer)');
 select t_assert((select count(*) from public.zwip_push_due()) = 0, 'Gleiche Erinnerung nicht zweimal');
 
 -- Wer heute schon gespielt hat, wird nicht erinnert

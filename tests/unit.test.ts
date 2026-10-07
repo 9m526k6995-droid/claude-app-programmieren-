@@ -101,7 +101,8 @@ test("Teilen-Text: Emoji-Raster 2×5 und Link", () => {
   const r = [100, 90, 70, 40, 0, 86, 65, 64, 30, 0];
   assert.equal(gridText(r), "🟪🟪🟩🟨🟥\n🟪🟩🟨🟨🟥");
   const t = shareText({ mode: "daily", day: 4, score: 545, rounds: r, streak: 3, link: "https://x.y/?c=abc" });
-  assert.ok(t.startsWith("ZWIP #4 ⚡ 545/1000"));
+  assert.ok(t.startsWith("ZWIP Daily 4. Okt. ⚡ 545/1000"), t.split("\n")[0]);
+  assert.ok(!/#\d/.test(t.split("\n")[0]), "keine Nummer im Namen");
   assert.ok(t.includes("🔥 3 Tage"));
   assert.ok(t.endsWith("Schlag mich: https://x.y/?c=abc"));
 });
@@ -162,7 +163,7 @@ test("Neue Challenges erst ab ihrer Daily – alte Dailies und Duelle bleiben id
 
 // ---------- Trophäen ----------
 import { scoreRound, leagueFee, leagueFor, milestoneProgress, MILESTONES, clampTrophies, difficultyRange, levelFor, tierFor, formatTrophies, LEAGUES } from "../src/trophies";
-import { GAMES, EXPLAIN_MS } from "../src/games";
+import { GAMES } from "../src/games";
 
 const tasks = (ok: number, tier: 0 | 1 | 2, wrong: number) => [
   ...Array.from({ length: ok }, () => ({ game: "odd", ok: true, timeout: false, tier, ms: 500 })),
@@ -246,8 +247,7 @@ test("Speed-Stufen und Registry: jedes Minispiel hat Vorbereitung + Tempo-Grenze
   for (const id of ["wait", "beat", "memory"]) assert.equal(GAMES.find((g) => g.id === id)!.prep, 0);
 });
 
-test("Erklärkarte in den gemischten Modi dauert genau 4 Sekunden", () => {
-  assert.equal(EXPLAIN_MS, 4000);
+test("Jedes Spiel hat eine verständliche Erklärung", () => {
   for (const g of GAMES) {
     assert.ok(g.howto.length >= 60, `${g.id}: Erklärung zu kurz`);
     assert.ok(!/[<>]/.test(g.howto), `${g.id}: kein HTML in der Erklärung`);
@@ -323,7 +323,10 @@ test("Navigation: Routen und Tabs", () => {
   assert.deepEqual(routeParts(""), ["start"]);
   assert.deepEqual(routeParts("#/minigames/memory"), ["minigames", "memory"]);
   assert.deepEqual(routeParts("#minigames"), ["minigames"]);
-  assert.equal(tabFor(["minigames", "odd"]), "spielen");
+  assert.equal(tabFor(["minigames", "odd"]), "start");
+  assert.equal(tabFor(["spielen"]), "start");
+  assert.equal(tabFor(["freunde"]), "social");
+  assert.equal(tabFor(["einstellungen"]), "profil");
   assert.equal(tabFor(["ranglisten", "welt"]), "ranglisten");
   assert.equal(tabFor(["pfad"]), null);
   assert.equal(tabFor(["quatsch"]), "start");
@@ -395,9 +398,9 @@ test("Clan-Freischaltungen und Schnellnachrichten passen zur Datenbank", () => {
   assert.deepEqual(nextRewards(1, 1)[0].level, 2);
 });
 
-test("Clan-Tab in der Navigation", () => {
-  assert.equal(tabFor(["clan", "chat"]), "clan");
-  assert.equal(tabFor(["clan", "c", "abc"]), "clan");
+test("Clan liegt im Tab „Freunde & Clan“", () => {
+  assert.equal(tabFor(["clan", "chat"]), "social");
+  assert.equal(tabFor(["clan", "c", "abc"]), "social");
 });
 
 // ---------- Länder ----------

@@ -39,7 +39,6 @@ export interface Mounted {
 }
 
 /** So lange (ms) wird ein Minispiel in den gemischten Modi vor jeder Aufgabe erklärt. */
-export const EXPLAIN_MS = 4_000;
 
 /** Kennzahlen einer Stufe (nur Zahlen, damit sie sich vergleichen und testen lassen). */
 export type StageParams = Record<string, number>;

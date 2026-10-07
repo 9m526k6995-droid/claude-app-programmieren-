@@ -46,6 +46,9 @@ Vor **jeder Aufgabe** zeigt eine Erklärkarte 4 Sekunden lang, was zu tun ist (E
 
 ### Aufbau der App
 
+**Vier Tabs:** 🎮 Spielen (Daily ganz oben, darunter Trophäen-Modus, Minigames, Training, Endlos) · 🏆 Ranglisten · 👥 Freunde & Clan (Umschalter oben) · 👤 Profil. Alle Einstellungen liegen gesammelt unter ⚙️ Einstellungen (im Profil).
+Oben rechts: **🔥 Streak** (grau = keine, flackert = heute noch nicht gespielt, hell = erledigt) und **🏆 Trophäen** (öffnet den Trophäenpfad).
+
 Unten sitzt eine Leiste mit sechs Bereichen. Jeder Bildschirm hat eine eigene Adresse (`#/…`), dadurch funktioniert der Zurück-Knopf am Handy und nach dem Neuladen bleibt man, wo man war.
 
 | Tab | Inhalt |
@@ -61,7 +64,7 @@ Oben rechts auf jeder Seite öffnet die **Flamme** den Trophäenpfad (`#/pfad`).
 
 **Rote Zahlen an der Leiste:** Am Freunde-Symbol bei neuen Freundesanfragen und angenommenen Anfragen, am Clan-Symbol bei Einladungen, Beitrittsanfragen (für den Leiter) und ungelesenen Chat-Nachrichten. Die App fragt alle 30 Sekunden und beim Zurückkehren in die App nach; beim Öffnen des Tabs verschwindet die Zahl.
 
-**Vor jedem Minispiel** kommt eine Erklärkarte (in allen Modi). Wer verstanden hat, tippt **„OK, los!“** und es geht sofort los – sonst startet die Aufgabe nach 4 Sekunden von selbst.
+**Vor jedem Minispiel** kommt eine Erklärkarte (in allen Modi). Die Zeit läuft erst, wenn man auf **„Los!“** tippt – nichts startet von selbst.
 
 **Bei Fehler oder Zeitablauf** wird die richtige Lösung markiert (z. B. das andere Feld bei „Finde den Anderen“, der Becher mit dem Ball, das Paar).
 
@@ -70,7 +73,7 @@ Oben rechts auf jeder Seite öffnet die **Flamme** den Trophäenpfad (`#/pfad`).
 Unter **Spielen → Minigames** gibt es alle 27 Spiele einzeln. Jedes hat eine Detailseite (Erklärung, „So wird's schwerer“, Highscore, Rang, Rangliste) und eine **eigene Rangliste** – umschaltbar zwischen **Welt, Freunde und Clan**.
 
 - Ein Lauf geht Stufe für Stufe. Jede Stufe wird schwerer. Ein Fehler oder Zeit um = Lauf vorbei.
-- Vorher die Erklärkarte mit „OK, los!“.
+- Vorher die Erklärkarte – los geht's erst mit „Los!“.
 - **Punkte statt nur Stufen:** Jede geschaffte Stufe n bringt `100 + 25·(n−1)` Punkte, sehr schnell +50 %, schnell +25 %. Im Lauf siehst du die aktuellen Punkte und deinen Highscore, nach jeder Stufe „+175 ⚡ +50 %“.
 - Gewertet wird der **Highscore**, bei Gleichstand die höhere Stufe, dann die kürzere Spielzeit, dann wer es früher geschafft hat.
 - Alte Bestwerte (nur Stufen) wurden einmalig ohne Tempo-Bonus in Punkte umgerechnet – niemand verliert seinen Platz.

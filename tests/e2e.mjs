@@ -231,6 +231,14 @@ async function newPage({ tour = false } = {}) {
 }
 
 /** Profil-Tab öffnen (dort sind jetzt Konto, Abmelden und Einstellungen) */
+/** Tab „Freunde & Clan“ öffnen und auf Freunde bzw. Clan umschalten */
+async function openSocial(page, sub) {
+  await page.click('[data-tab="social"]', { force: true });
+  await page.waitForSelector(".social-seg");
+  if (!(await page.locator(`.social-seg [data-seg="${sub}"].on`).count())) await page.click(`.social-seg [data-seg="${sub}"]`, { force: true });
+  await page.waitForSelector(`.social-seg [data-seg="${sub}"].on`);
+}
+
 async function openSettings(page) {
   await page.click('[data-tab="profil"]', { force: true });
   await page.waitForSelector('[data-pf="logout"]');
@@ -595,7 +603,7 @@ try {
   await A.page.click('[data-act="share"]', { force: true });
   await A.page.waitForTimeout(300);
   const shared = await A.page.evaluate(() => navigator.clipboard.readText()).catch(() => "");
-  check(/^ZWIP #\d+ ⚡ \d+\/1000\n[🟪🟩🟨🟥]{5}\n[🟪🟩🟨🟥]{5}/u.test(shared), "Teilen-Text mit Emoji-Raster erzeugt");
+  check(/^ZWIP Daily \d+\. \S+ ⚡ \d+\/1000\n[🟪🟩🟨🟥]{5}\n[🟪🟩🟨🟥]{5}/u.test(shared), "Teilen-Text mit Emoji-Raster erzeugt");
   await A.page.click('[data-act="challenge"]', { force: true });
   await A.page.waitForTimeout(300);
   const duelText = await A.page.evaluate(() => navigator.clipboard.readText()).catch(() => "");
@@ -616,7 +624,8 @@ try {
   // 5) Zurück zum Home: Daily erledigt, Countdown läuft
   await A.page.click('.actions-2 [data-act="home"]', { force: true });
   await A.page.waitForSelector("#countdown");
-  check((await A.page.textContent(".streak-mini")).includes("1 Tag"), "Home zeigt Streak 1 (jetzt bei der Wochenleiste)");
+  check((await A.page.textContent(".streak-chip")).includes("1") && (await A.page.locator(".streak-chip.s-done").count()) === 1, "Oben rechts: 🔥 Streak 1, heute erledigt");
+  check((await A.page.textContent(".done-card")).includes("Daily von heute") && !(await A.page.textContent(".page")).match(/Daily #\d/), "Daily ohne Nummer im Namen");
   await A.page.screenshot({ path: `${SHOTS}/5-home-done.png` });
 
   // 5b) Logout → Startmenü, Fehlerfälle bei der Anmeldung, erneut anmelden
@@ -640,7 +649,7 @@ try {
   check((await A.page.inputValue("#auth-email")) === "lena@test.de", "E-Mail wird beim Wechsel zur Anmeldung übernommen");
   await fillAuth(A.page, "lena@test.de", "geheim123");
   await A.page.waitForSelector('[data-act="share-today"]', { timeout: 5000 });
-  check((await A.page.textContent(".streak-mini")).includes("1 Tag"), "Nach erneutem Login: Daily-Ergebnis und Streak noch da");
+  check((await A.page.textContent(".streak-chip")).includes("1"), "Nach erneutem Login: Daily-Ergebnis und Streak noch da");
 
   // 5c) Abgelaufenes Token wird automatisch erneuert
   const before = mock.refreshCalls;
@@ -714,7 +723,7 @@ try {
   await B.page.screenshot({ path: `${SHOTS}/8-board.png` });
 
   // 8) Endlos: absichtlich in Runde 3 verlieren
-  await B.page.click('[data-tab="spielen"]', { force: true });
+  await B.page.click('[data-tab="start"]', { force: true });
   await B.page.click('[data-act="endless"]', { force: true });
   let n = 0;
   for (let i = 0; i < 3; i++) n = (await solveRound(B.page, n, i === 2)).n;
@@ -823,32 +832,33 @@ try {
   }
   check(solSeen.length === 6, `Bei Zeitablauf wird die richtige Lösung markiert (${solSeen.join(", ")})`);
 
-  // 9) Erklärkarte vor JEDER Aufgabe: läuft durch, lässt sich nicht wegtippen (Dauer im Test verkürzt)
-  await B.page.goto(`${BASE}?e2e=1&explain=3000#/spielen`);
+  // 9) Erklärkarte vor JEDER Aufgabe: nichts startet von selbst, erst „Los!“ startet die Aufgabe
+  await B.page.goto(`${BASE}?e2e=1&explain=manual#/start`);
   await B.page.waitForSelector('[data-act="free"]');
   await B.page.click('[data-act="free"]', { force: true });
   await B.page.waitForSelector(".intro.explain");
   const exText = await B.page.textContent(".explain-text");
   check(exText.length >= 60, `Ausführliche Erklärung wird gezeigt („${exText.slice(0, 40)}…“)`);
-  const exStart = Number(await B.page.textContent(".explain-n"));
-  check(exStart === 3, `Countdown startet bei der eingestellten Dauer (${exStart} s)`);
+  check((await B.page.textContent(".explain-count")).includes("erst, wenn du tippst"), "Hinweis: Die Zeit läuft erst nach dem Tippen");
   const ic = await stageCenterOf(B.page, ".intro .intro-title");
   await B.page.mouse.click(ic.x, ic.y);
-  await B.page.waitForTimeout(1300);
+  await B.page.waitForTimeout(2500);
   check(await B.page.isVisible(".intro.explain"), "Daneben tippen überspringt die Erklärung nicht aus Versehen");
-  check(Number(await B.page.textContent(".explain-n")) < exStart, "Countdown läuft herunter");
-  check(await B.page.isVisible(".explain-ok"), "Erklärkarte hat einen OK-Knopf");
+  check(await B.page.isVisible(".intro.explain"), "Ohne Tippen startet nichts von selbst (auch nach 2,5 s nicht)");
+  check(await B.page.isVisible(".explain-ok"), "Erklärkarte hat einen Los-Knopf");
   await B.page.screenshot({ path: `${SHOTS}/2-explain.png` });
-  await B.page.waitForSelector(".intro.explain", { state: "detached", timeout: 4000 });
-  check(true, "Ohne OK startet die Aufgabe nach Ablauf von selbst");
+  let okAt = Date.now();
+  let okB = await stageCenterOf(B.page, ".explain-ok");
+  await B.page.mouse.click(okB.x, okB.y);
+  await B.page.waitForSelector(".intro.explain", { state: "detached", timeout: 1500 });
+  check(Date.now() - okAt < 1200, `„Los!“ startet die Aufgabe sofort (${Date.now() - okAt} ms)`);
   await solveRound(B.page, 0);
   await B.page.waitForSelector(".intro.explain", { timeout: 4000 });
   check((await B.page.textContent(".intro-round")).includes("2 / 10"), "Auch vor der zweiten Aufgabe kommt die Erklärkarte");
-  const okAt = Date.now();
-  const okB = await stageCenterOf(B.page, ".explain-ok");
+  okAt = Date.now();
+  okB = await stageCenterOf(B.page, ".explain-ok");
   await B.page.mouse.click(okB.x, okB.y);
   await B.page.waitForSelector(".intro.explain", { state: "detached", timeout: 1500 });
-  check(Date.now() - okAt < 1200, `OK tippen startet die Aufgabe sofort (${Date.now() - okAt} ms statt 3 s)`);
   await solveRound(B.page, 1);
 
   // Training abbrechen → zurück auf „Spielen“
@@ -859,9 +869,9 @@ try {
   // ================= NAVIGATION =================
   await B.page.goto(`${BASE}?e2e=1#/spielen`);
   await B.page.waitForSelector(".mode-list");
-  check((await B.page.locator(".tabbar .tab").count()) === 6, "Tab-Leiste mit 6 Bereichen (inkl. Clan)");
-  check((await B.page.getAttribute('.tab[data-tab="spielen"]', "aria-current")) === "page", "Aktiver Tab ist markiert");
-  check((await B.page.locator(".mode-card").count()) === 5, "„Spielen“ zeigt 5 Modi");
+  check((await B.page.locator(".tabbar .tab").count()) === 4, "Tab-Leiste mit 4 Bereichen (Spielen, Ranglisten, Freunde & Clan, Profil)");
+  check((await B.page.getAttribute('.tab[data-tab="start"]', "aria-current")) === "page", "Aktiver Tab ist markiert");
+  check((await B.page.locator(".mode-card").count()) === 4 && (await B.page.locator('.play-btn, .done-card').count()) === 1, "„Spielen“ zeigt die Daily und 4 weitere Modi");
   await B.page.screenshot({ path: `${SHOTS}/n1-spielen.png` });
   await B.page.click('[data-tab="ranglisten"]', { force: true });
   await B.page.waitForSelector(".seg");
@@ -876,18 +886,18 @@ try {
   await B.page.waitForSelector(".mg-grid", { timeout: 5000 });
   check(true, "Neuladen bleibt auf demselben Bildschirm");
   await B.page.screenshot({ path: `${SHOTS}/n2-minigames.png` });
-  for (const t of ["start", "freunde", "profil"]) {
+  for (const t of ["start", "social", "profil"]) {
     // Seiten zeichnen sich nach dem Laden manchmal neu – dann einfach nochmal tippen
     for (let k = 0; k < 4; k++) {
       const ok = await B.page.click(`[data-tab="${t}"]`, { force: true, timeout: 3000 }).then(() => true, () => false);
       if (ok) break;
       await B.page.waitForTimeout(400);
     }
-    await B.page.waitForFunction((t) => location.hash === `#/${t}`, t);
+    await B.page.waitForFunction((t) => location.hash === `#/${t === "social" ? "freunde" : t}` || (t === "social" && location.hash === "#/clan"), t);
     await B.page.waitForSelector(`.tab.on[data-tab="${t}"]`);
   }
   await B.page.waitForSelector('[data-pf="logout"]');
-  check(true, "Alle Tabs erreichbar (Start, Freunde, Profil)");
+  check(true, "Alle Tabs erreichbar (Spielen, Freunde & Clan, Profil)");
   check(!(await B.page.locator('[data-act="settings"]').count()), "Kein extra Einstellungs-Popup mehr");
 
   // ================= TROPHÄEN =================
@@ -1040,8 +1050,8 @@ try {
   // ================= FREUNDE =================
   const fB = B.page; // Tom
   await fB.goto(`${BASE}?e2e=1`);
-  await fB.waitForSelector('[data-tab="freunde"]');
-  await fB.click('[data-tab="freunde"]', { force: true });
+  await fB.waitForSelector('[data-tab="social"]');
+  await openSocial(fB, "freunde");
   await fB.waitForSelector(".friends .name-banner");
   await fB.click(".friends .name-banner", { force: true });
   await fB.fill("#un-input", "Tom");
@@ -1066,12 +1076,12 @@ try {
   await fB.goto(`${BASE}?e2e=1#/start`);
   await tP.goto(`${BASE}?e2e=1#/start`);
   await tP.reload();
-  const badgeIn = await tP.waitForFunction(() => document.querySelector('.tab[data-tab="freunde"] .tab-badge')?.textContent === "1", null, { timeout: 8000 }).then(() => true, () => false);
+  const badgeIn = await tP.waitForFunction(() => document.querySelector('.tab[data-tab="social"] .tab-badge')?.textContent === "1", null, { timeout: 8000 }).then(() => true, () => false);
   check(badgeIn, "Neue Freundesanfrage → rote 1 am Freunde-Symbol");
   await tP.screenshot({ path: `${SHOTS}/f0-badge.png` });
-  await tP.click('[data-tab="freunde"]', { force: true });
+  await openSocial(tP, "freunde");
   await tP.waitForSelector('[data-accept="Tom"]', { timeout: 5000 });
-  check((await tP.locator('.tab[data-tab="freunde"] .tab-badge').count()) === 0, "Badge verschwindet beim Öffnen des Freunde-Tabs");
+  check((await tP.locator('.tab[data-tab="social"] .tab-badge').count()) === 0, "Badge verschwindet beim Öffnen des Freunde-Tabs");
   check(true, "Eingehende Anfrage bei Lena sichtbar");
   await tP.screenshot({ path: `${SHOTS}/f2-incoming.png` });
   await tP.click('[data-accept="Tom"]', { force: true });
@@ -1079,15 +1089,15 @@ try {
   check(dbVal("select status from public.friendships") === "accepted", "Freundschaft in der Datenbank: accepted");
   await fB.goto(`${BASE}?e2e=1#/start`);
   await fB.reload();
-  const badgeAcc = await fB.waitForFunction(() => document.querySelector('.tab[data-tab="freunde"] .tab-badge')?.textContent === "1", null, { timeout: 8000 }).then(() => true, () => false);
+  const badgeAcc = await fB.waitForFunction(() => document.querySelector('.tab[data-tab="social"] .tab-badge')?.textContent === "1", null, { timeout: 8000 }).then(() => true, () => false);
   check(badgeAcc, "Angenommene Anfrage → Badge beim Absender");
-  await fB.click('[data-tab="freunde"]', { force: true });
+  await openSocial(fB, "freunde");
   await fB.waitForSelector('[data-friend="Lena"]', { timeout: 5000 });
-  check((await fB.locator('.tab[data-tab="freunde"] .tab-badge').count()) === 0, "Badge beim Absender weg nach Öffnen");
+  check((await fB.locator('.tab[data-tab="social"] .tab-badge').count()) === 0, "Badge beim Absender weg nach Öffnen");
   check(dbVal("select count(*) from public.profiles where username = 'Tom' and friends_seen_at > now() - interval '1 minute'") === "1", "Gesehen-Zeitpunkt in der Datenbank gespeichert");
   psql("update public.profiles set trophies = 9000, best_trophies = 9000 where username = 'Tom'");
   await tP.goto(`${BASE}?e2e=1#/start`);
-  await tP.click('[data-tab="freunde"]', { force: true });
+  await openSocial(tP, "freunde");
   await tP.waitForSelector('[data-friend="Tom"]');
   check((await tP.textContent('[data-friend="Tom"]')).includes("Platin"), "Freund mit Trophäen und Liga");
   await tP.screenshot({ path: `${SHOTS}/f3-friends.png` });
@@ -1362,9 +1372,9 @@ try {
   // Tom sieht ein Badge am Clan-Tab und nimmt die Einladung an
   await fB.goto(`${BASE}?e2e=1#/start`);
   await fB.reload();
-  const clanBadge = await fB.waitForFunction(() => document.querySelector('.tab[data-tab="clan"] .tab-badge')?.textContent === "1", null, { timeout: 8000 }).then(() => true, () => false);
+  const clanBadge = await fB.waitForFunction(() => document.querySelector('.tab[data-tab="social"] .tab-badge')?.textContent === "1", null, { timeout: 8000 }).then(() => true, () => false);
   check(clanBadge, "Einladung → Badge am Clan-Tab");
-  await fB.click('[data-tab="clan"]', { force: true });
+  await openSocial(fB, "clan");
   await fB.waitForSelector('[data-c="inv-yes"]', { timeout: 5000 });
   await fB.click('[data-c="inv-yes"]', { force: true });
   await fB.waitForSelector(".clan-head", { timeout: 8000 });
@@ -1410,11 +1420,11 @@ try {
   // Lena: ungelesene Nachrichten als Badge, nach dem Lesen weg; Nachricht melden
   await tP.goto(`${BASE}?e2e=1#/start`);
   await tP.reload();
-  const unreadBadge = await tP.waitForFunction(() => Number(document.querySelector('.tab[data-tab="clan"] .tab-badge')?.textContent) >= 2, null, { timeout: 8000 }).then(() => true, () => false);
+  const unreadBadge = await tP.waitForFunction(() => Number(document.querySelector('.tab[data-tab="social"] .tab-badge')?.textContent) >= 2, null, { timeout: 8000 }).then(() => true, () => false);
   check(unreadBadge, "Ungelesene Chat-Nachrichten → Badge am Clan-Tab");
   await tP.goto(`${BASE}?e2e=1#/clan/chat`);
   await tP.waitForSelector(".msg[data-msg]", { timeout: 8000 });
-  await tP.waitForFunction(() => !document.querySelector('.tab[data-tab="clan"] .tab-badge'), null, { timeout: 8000 }).then(() => check(true, "Badge weg nach dem Lesen"), () => check(false, "Badge weg nach dem Lesen"));
+  await tP.waitForFunction(() => !document.querySelector('.social-seg [data-seg="clan"] .seg-badge'), null, { timeout: 8000 }).then(() => check(true, "Badge weg nach dem Lesen"), () => check(false, "Badge weg nach dem Lesen"));
   await tP.click(".msg[data-msg]", { force: true });
   await tP.waitForSelector('[data-m="report"]');
   await tP.click('[data-m="report"]', { force: true });
@@ -1471,7 +1481,7 @@ try {
   check(true, "Hinweis „Wähl dein Land“ in der Rangliste");
   await tP.waitForSelector('.region-chips [data-region="world"].on');
   check(true, "Ohne Land ist „Weltweit“ gewählt");
-  await tP.goto(`${BASE}?e2e=1#/profil`);
+  await tP.goto(`${BASE}?e2e=1#/einstellungen`);
   await tP.waitForSelector('[data-cs="pick"]', { timeout: 8000 });
   check((await tP.textContent("#country-set")).includes("einmal im Monat"), "Einstellungen erklären: Land einmal im Monat änderbar");
   await tP.click('[data-cs="pick"]', { force: true });
@@ -1483,7 +1493,7 @@ try {
   psql("update public.profiles set country = 'NL' where username = 'Tom'");
   psql("update public.profiles set country_changed_at = now() - interval '2 days' where username = 'Lena'");
   await tP.goto(`${BASE}?e2e=1#/start`);
-  await tP.goto(`${BASE}?e2e=1#/profil`);
+  await tP.goto(`${BASE}?e2e=1#/einstellungen`);
   await tP.reload();
   await tP.waitForFunction(() => document.querySelector("#country-set")?.textContent.includes("Nächste Änderung möglich ab"), null, { timeout: 8000 });
   check(true, "Nach der Wahl steht da, ab wann man wieder ändern kann");
@@ -1544,7 +1554,7 @@ try {
   check(await G.page.evaluate(() => localStorage.getItem("zwip:tour") === "1"), "Einführung wird nur einmal gezeigt");
   check(await G.page.locator(".notice.guest").isVisible(), "Gast sieht den Gast-Hinweis");
   check(await G.page.locator('[data-act="daily"]').isVisible(), "Gast kann die Daily spielen");
-  await G.page.click('[data-tab="clan"]', { force: true });
+  await G.page.click('[data-tab="social"]', { force: true });
   await G.page.waitForSelector(".guest-wall");
   check((await G.page.textContent(".guest-wall")).includes("Konto"), "Clans brauchen ein Konto");
   await G.page.goto(`${BASE}?e2e=1#/minigames/memory`);
@@ -1596,7 +1606,7 @@ try {
   await ADM.page.click('[data-auth="register"]', { force: true });
   await fillAuth(ADM.page, "luis.hausner@web.de", "admin12345", "admin12345");
   await ADM.page.waitForSelector('[data-act="daily"]', { timeout: 8000 });
-  await ADM.page.goto(`${BASE}?e2e=1#/profil`);
+  await ADM.page.goto(`${BASE}?e2e=1#/einstellungen`);
   await ADM.page.waitForSelector('a[href="#/admin"]', { timeout: 8000 });
   check(true, "Admin sieht den Moderations-Link im Profil");
   check((await tP.locator('a[href="#/admin"]').count()) === 0, "Normale Spieler sehen keinen Admin-Link");
@@ -1631,7 +1641,7 @@ try {
   await DEL.page.click('[data-auth="register"]', { force: true });
   await fillAuth(DEL.page, "weg@test.de", "wegweg123", "wegweg123", 13);
   await DEL.page.waitForSelector('[data-act="daily"]', { timeout: 8000 });
-  await DEL.page.goto(`${BASE}?e2e=1#/profil`);
+  await DEL.page.goto(`${BASE}?e2e=1#/einstellungen`);
   await DEL.page.waitForSelector('[data-acc="export"]');
   const [dl] = await Promise.all([DEL.page.waitForEvent("download", { timeout: 8000 }), DEL.page.click('[data-acc="export"]', { force: true })]);
   const dlText = fs.readFileSync(await dl.path(), "utf8");
