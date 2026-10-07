@@ -67,6 +67,19 @@ Ohne Supabase zeigt die App nur das Startmenü mit einem Hinweis, dass die Anmel
       Die Schlüssel gehören **nicht** ins Repo – nur in diese Tabelle (nur für den Server lesbar).
     - Edge Function `push-send` aus `supabase/functions/push-send/index.ts` anlegen, **„Verify JWT“ aus** (sie prüft das Cron-Passwort selbst).
     - `supabase/push-cron.sql` ausführen (vorher `DEIN-PROJEKT` ersetzen). Danach prüft der Server stündlich, wer erinnert werden soll: höchstens 2-mal am Tag, nie zwischen 22 und 8 Uhr, nur wenn die Daily noch fehlt.
+14. Neue Query, Inhalt von `supabase/seasonpass.sql` einfügen → **Run**. (Season Pass, Aufgaben, Coins & Gems, Shop, Sammlung. Muss nach `push.sql` laufen. Danach `supabase/moderation.sql` noch einmal ausführen, damit „Meine Daten herunterladen“ auch Pass und Käufe enthält.)
+
+## Echte Käufe (App Store / Google Play) – später
+
+Im Moment laufen Käufe mit echtem Geld nur im **Testmodus**: Es wird nichts abgebucht, der Kauf wird mit `provider = 'test'` in `sp_purchases` gespeichert. Wer testkaufen darf, stellt man unter **Admin → Pass & Shop → Seasons** ein (nur Admins / alle / aus).
+
+Für echtes Bezahlen fehlt noch:
+
+1. **App in die Stores bringen.** Digitale Inhalte (Season Pass, Gems) müssen in iOS- und Android-Apps über Apple In-App-Purchase bzw. Google Play Billing laufen. Dafür muss die Web-App in eine native Hülle (z. B. Capacitor) und dort ein Kauf-Plugin rein (z. B. RevenueCat oder `cordova-plugin-purchase`).
+2. **Produkte anlegen** in App Store Connect und der Google Play Console – mit denselben IDs wie in `sp_products` (`pass`, `starter`, `gems_s`, `gems_m`, `gems_l`) oder eigene IDs in den Spalten `apple_id` / `google_id` eintragen. Der Season Pass ist ein **Verbrauchsartikel**, der pro Season neu gekauft wird.
+3. **Beleg prüfen auf dem Server:** eine Edge Function (z. B. `verify-purchase`) bekommt den Kaufbeleg aus der App, prüft ihn bei Apple bzw. Google und ruft dann mit Server-Rechten `public.zwip_sp_store_purchase(user_id, 'apple'|'google', transaktions_id, produkt_id)` auf. Die Funktion schreibt gut, ist doppelt-sicher (gleiche Transaktion zählt nur einmal) und ist für die App selbst gesperrt.
+4. **Rückerstattungen:** Apple/Google melden Erstattungen per Server-Benachrichtigung; dann den Kauf auf `status = 'refunded'` setzen (und ggf. Gems abziehen).
+5. **Rechtliches:** Preise inkl. MwSt., Widerrufsbelehrung für digitale Inhalte in die Nutzungsbedingungen, Kaufhinweis für Minderjährige. In-App-Käufe für die Altersfreigabe angeben.
 
 ### 3. Anmeldung einstellen
 1. Links **Authentication** → **Sign In / Providers** → **Email**: muss **aktiviert** sein (Standard).

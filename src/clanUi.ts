@@ -2,6 +2,7 @@
 // Chat (frei + Schnellnachrichten, Filter, Melden, Stummschalten), Mitglieder und Einstellungen.
 
 import { esc, toast, modal } from "./ui";
+import { myEmotes } from "./passUi";
 import { formatTrophies, leagueById } from "./trophies";
 import { fmtScore } from "./score";
 import {
@@ -570,9 +571,24 @@ function renderChat(body: HTMLElement, d: MyClan, h: ClanHandlers) {
     if (await send(v, null)) inp.value = "";
   });
   body.querySelector(".chat-quick")!.addEventListener("click", (e) => {
+    const em = (e.target as HTMLElement).closest<HTMLElement>("[data-emote]");
+    if (em) {
+      if (muted) return toast("Du bist gerade stummgeschaltet.");
+      void send(em.dataset.emote!, null);
+      return;
+    }
     const b = (e.target as HTMLElement).closest<HTMLElement>("[data-quick]");
     if (!b || muted) return muted ? toast("Du bist gerade stummgeschaltet.") : undefined;
     void send(null, Number(b.dataset.quick));
+  });
+  // Emotes aus dem Season Pass / Shop als extra Schnellknöpfe
+  void myEmotes().then((list) => {
+    const bar = body.querySelector(".chat-quick");
+    if (!bar || !list.length) return;
+    bar.insertAdjacentHTML(
+      "beforeend",
+      list.map((x) => `<button class="chip sp-emote-chip" data-emote="${esc(`${x.e} ${x.t}`.trim())}" title="Emote">${esc(x.e)}</button>`).join(""),
+    );
   });
   list.addEventListener("click", (e) => {
     const b = (e.target as HTMLElement).closest<HTMLElement>("[data-msg]");

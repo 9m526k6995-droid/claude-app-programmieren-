@@ -2,7 +2,7 @@
 
 **10 Blitz-Challenges. Jeden Tag neu. Für alle gleich. Plus 27 Minigames mit eigenen Ranglisten.**
 
-ZWIP ist ein Mobile-first Web-Game für Jugendliche und junge Erwachsene. Kostenlos anmelden, einmal tippen, spielen. Keine Installation, keine Werbung, keine Lootboxen.
+ZWIP ist ein Mobile-first Web-Game für Jugendliche und junge Erwachsene. Kostenlos anmelden, einmal tippen, spielen. Keine Installation, keine Werbung, keine Lootboxen. Optional: Season Pass und Shop – nur Optik, kein Vorteil.
 
 ## Was man macht
 
@@ -185,6 +185,20 @@ Unter dem Tab **🛡️ Clan** kann jeder einen eigenen Clan gründen oder einem
   - **Stummschalten:** Der Leiter kann Mitglieder 1 Stunde bis 7 Tage im Chat stummschalten. Jeder kann einzelne Spieler für sich selbst ausblenden.
 - Im **Profil** jedes Spielers steht sein Clan (antippen öffnet die Clan-Seite).
 
+### Season Pass, Shop & Sammlung
+
+Alles hier ist **nur Optik** – nichts davon gibt Trophäen, Punkte oder einen Vorteil im Spiel. **Keine Lootboxen**: Man sieht immer vorher genau, was man bekommt.
+
+- **Season Pass** (`#/pass`): Eine Season dauert 6 Wochen und hat 40 Stufen à 1.500 XP. Danach startet automatisch die nächste (Fortschritt und Premium werden zurückgesetzt, gesammelte Items bleiben).
+  - **XP:** Trophäen-Runde 120 (gewonnen = Trophäen-Plus) bzw. 60, Minigame-Lauf 60 (ab Stufe 5) bzw. 30 (ab Stufe 1), Daily 150. Aus Runden höchstens 1.500 XP und 150 Coins am Tag. Die XP kommen über Datenbank-Trigger **nach** der Wertung – die Trophäen- und Minigame-Funktionen sind unverändert.
+  - **Aufgaben:** 3 tägliche und 3 wöchentliche, zufällig je Spieler aus einem Pool (z. B. „Spiel 5 Runden“, „Gewinn 2 Runden am Stück“, „Lade einen Freund ein, der sich registriert“). Einladen geht über den Profil-Link mit `?ref=Name`; es zählt nur ein frisch registriertes Konto.
+  - **Zwei Spuren:** Gratis (Coins, Profilbilder, Rahmen, Titel auf Stufe 40, selten Gems) und Premium (Skins, animierte Rahmen, Emotes, Siegesanimationen, Namensfarben, seltener Titel, exklusiver Season-Skin auf Stufe 40). Wer den Pass mitten in der Season kauft, bekommt alle schon erreichten Premium-Belohnungen sofort.
+  - Horizontal scrollbare Leiste mit beiden Spuren, aktuelle Stufe hervorgehoben, Countdown, „Abholen“ und „Alle abholen“. Nach jeder Runde kurz oben: „+120 XP · ✅ Aufgabe geschafft“.
+- **Shop** (`#/shop`): 6 Items am Tag (für alle gleich, um Mitternacht neu) plus Dauerangebote, bezahlbar mit **Coins** (verdient man im Spiel) oder **Gems**. Bei Gem-Preisen steht immer der ungefähre Euro-Wert dabei. Echtgeld: Season Pass 4,99 €, 80/500/1.100 Gems für 0,99/4,99/9,99 €, Starter-Paket 1,99 € (nur einmal). Vor jedem Kauf ein Bestätigungsfenster mit Euro-Preis.
+- **Testmodus:** Echtgeld-Käufe werden im Moment nur simuliert und gespeichert (es wird nichts abgebucht). Standard: nur Admins dürfen testkaufen, umschaltbar im Admin-Bereich. Was für echtes Bezahlen fehlt, steht in [DEPLOYMENT.md](DEPLOYMENT.md#echte-käufe-app-store--google-play--später).
+- **Sammlung** (`#/sammlung`): Skin (färbt den Hintergrund der ganzen App), Profilbild (Emoji, wenn kein Foto), Rahmen, Namensfarbe, Titel und Siegesanimation ausrüsten. Rahmen, Namensfarbe, Titel und Skin sieht man auch in fremden Profilen. Emotes erscheinen als extra Knöpfe im Clan-Chat.
+- **Admin → Pass & Shop:** Seasons planen/umbenennen/verlängern, Belohnungen pro Stufe festlegen, Items anlegen (Farben, Emojis, Texte werden geprüft), Shop-Katalog und Preise pflegen, Testkäufe ein/aus.
+
 ### Gast-Modus, Einführung, Erinnerungen
 
 - **Ohne Konto spielen:** Im Startmenü „Erst mal ohne Konto spielen“. Daily, Training, Endlos und alle Minigames gehen sofort; Highscores bleiben auf dem Gerät. Ranglisten, Trophäen, Freunde und Clans zeigen „Konto erstellen“.
@@ -263,6 +277,9 @@ src/
   games.ts        Die 12 Mini-Challenges (zentrale Liste inkl. Vorbereitungszeit und Tempo-Grenzen)
   trophies.ts     Trophäen-Logik: Ligen, Meilensteine, Berechnung, Schwierigkeit
   social.ts       Verbindung zu Trophäen, Weltrangliste und Freunden (Supabase-Funktionen)
+  passUi.ts       Season Pass, Shop, Sammlung, XP-Hinweis nach Runden, Skin, Siegesanimation, Einladungen
+  passKit.ts      Typen und Helfer dazu (Preise, Farb-Prüfung, Item-Vorschau)
+  passAdminUi.ts  Admin: Seasons, Belohnungen, Items, Shop, Preise
   trophyUi.ts     Trophäenpfad, Liga-Aufstieg, Ergebnis, Weltrangliste, Spielerprofil
   friendsUi.ts    Freunde-Bereich
   clanUi.ts       Clan-Bereich (gründen, suchen, Übersicht, Chat, Mitglieder, Einstellungen, Clan-Rangliste)
@@ -291,6 +308,7 @@ supabase/moderation.sql  Alter/Zustimmung, Melden, Sperren, Anti-Cheat, Admin, D
 supabase/functions/delete-account  Edge Function: Konto löschen
 supabase/clanplus.sql  Clan-Einladungslinks und Clan-Ligen
 supabase/push.sql      Push-Erinnerungen (Abos, Ruhezeit, max. 2 am Tag) + push-cron.sql
+supabase/seasonpass.sql Season Pass, Aufgaben, Coins/Gems, Shop, Sammlung, Testkäufe, Admin (+ zwip_sp_store_purchase für echte Käufe)
 supabase/functions/push-send  Edge Function: Erinnerungen verschicken
 src/games.ts / games2.ts / games3.ts  Die 27 Minispiele (games2 = dritte, games3 = vierte Welle), gameKit.ts = gemeinsame Bausteine
 supabase/schema.sql   Alte Tages-Punkteliste (wird nicht mehr genutzt)

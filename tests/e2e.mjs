@@ -36,7 +36,7 @@ function psqlFile(file, db = DB) {
     process.exit(1);
   }
   psql(`create database ${DB}`, "postgres");
-  for (const f of ["tests/sql/supabase-shim.sql", "supabase/profiles.sql", "supabase/schema.sql", "supabase/trophies.sql", "supabase/profile.sql", "supabase/minigames.sql", "supabase/social.sql", "supabase/clans.sql", "supabase/regions.sql", "supabase/moderation.sql", "supabase/clanplus.sql", "supabase/push.sql"]) psqlFile(f);
+  for (const f of ["tests/sql/supabase-shim.sql", "supabase/profiles.sql", "supabase/schema.sql", "supabase/trophies.sql", "supabase/profile.sql", "supabase/minigames.sql", "supabase/social.sql", "supabase/clans.sql", "supabase/regions.sql", "supabase/moderation.sql", "supabase/clanplus.sql", "supabase/push.sql", "supabase/seasonpass.sql"]) psqlFile(f);
 }
 const lit = (v) =>
   v === null || v === undefined
@@ -1635,6 +1635,89 @@ try {
   await ADM.page.waitForSelector('[data-w="testwort"]', { timeout: 5000 });
   check(dbVal("select public.zwip_clean_text('ein Testwort hier')") === "ein ******** hier", "Admin fügt Filter-Wort hinzu, es wird sofort gefiltert");
 
+  // ================= SEASON PASS, SHOP, SAMMLUNG =================
+  const lenaId = dbVal("select id from public.profiles where username = 'Lena'");
+  check(Number(dbVal(`select coalesce(sum(xp), 0) from public.sp_progress where user_id = '${lenaId}'`)) > 0, "Gespielte Runden bringen Season-XP (Trigger nach der Wertung)");
+  // Admin erlaubt Testkäufe für alle
+  await ADM.page.goto(`${BASE}?e2e=1#/admin/shop`);
+  await ADM.page.waitForSelector("#adm-test", { timeout: 8000 });
+  await ADM.page.selectOption("#adm-test", "all");
+  await ADM.page.waitForFunction(() => document.querySelector(".toast")?.textContent.includes("Gespeichert"), null, { timeout: 5000 });
+  check(dbVal("select value from public.sp_settings where key = 'test_purchases'") === "all", "Admin schaltet Testkäufe für alle frei");
+  await ADM.page.goto(`${BASE}?e2e=1#/admin/shop/belohnungen`);
+  await ADM.page.waitForSelector(".adm-rw", { timeout: 8000 });
+  check((await ADM.page.locator(".adm-rw-card").count()) === 40, "Admin sieht alle 40 Stufen zum Bearbeiten");
+  await ADM.page.fill('.adm-rw[data-l="2"][data-t="free"] input[name="coins"]', "77");
+  await ADM.page.press('.adm-rw[data-l="2"][data-t="free"] input[name="coins"]', "Tab");
+  await ADM.page.waitForFunction(() => document.querySelector('.adm-rw[data-l="2"][data-t="free"]')?.classList.contains("saved"), null, { timeout: 5000 });
+  check(dbVal("select coins from public.sp_rewards r join public.sp_seasons s on s.id = r.season_id where s.starts_at <= now() and s.ends_at > now() and level = 2 and track = 'free'") === "77", "Admin ändert eine Belohnung");
+  await ADM.page.screenshot({ path: `${SHOTS}/sp-admin.png` });
+
+  // Season Pass ansehen und Pass (im Testmodus) kaufen
+  await tP.goto(`${BASE}?e2e=1#/start`);
+  await tP.waitForSelector(".sp-start-card", { timeout: 8000 });
+  check(true, "Season-Pass-Karte auf dem Startbildschirm");
+  await tP.click(".sp-start-card", { force: true });
+  await tP.waitForSelector("#sp-track .sp-col", { timeout: 8000 });
+  check((await tP.locator("#sp-track .sp-col").count()) === 40, "Pass-Leiste mit 40 Stufen");
+  check((await tP.locator(".sp-col.current").count()) === 1, "Aktuelle Stufe hervorgehoben");
+  check((await tP.locator(".sp-quest").count()) === 6, "3 tägliche + 3 wöchentliche Aufgaben");
+  check(/noch \d+ T/.test(await tP.textContent("#sp-ends")), "Countdown bis Season-Ende");
+  await tP.screenshot({ path: `${SHOTS}/sp-pass.png`, fullPage: true });
+  await tP.click('[data-sp="buy-pass"]', { force: true });
+  await tP.waitForSelector(".sp-buy-modal [data-buy]");
+  const buyTxt = await tP.textContent(".sp-buy-modal");
+  check(buyTxt.includes("4,99") && buyTxt.includes("kein Geld"), "Bestätigung mit Euro-Preis und Testmodus-Hinweis");
+  await tP.click(".sp-buy-modal [data-buy]", { force: true });
+  await tP.waitForSelector(".sp-prem-on", { timeout: 8000 });
+  check(dbVal(`select premium::text from public.sp_progress g join public.sp_seasons s on s.id = g.season_id where g.user_id = '${lenaId}' and s.starts_at <= now() and s.ends_at > now()`) === "true", "Pass gekauft → Premium in der Datenbank");
+  check(dbVal(`select provider from public.sp_purchases where user_id = '${lenaId}'`) === "test", "Kauf als Testkauf gespeichert");
+
+  // Belohnung abholen
+  psql(`update public.sp_progress set xp = greatest(xp, 1500 * 2) where user_id = '${lenaId}'`);
+  await tP.reload();
+  await tP.waitForSelector(".sp-tile.ready", { timeout: 8000 });
+  const coins0 = Number(dbVal(`select coalesce(coins, 0) from public.sp_wallets where user_id = '${lenaId}'`) || 0);
+  await tP.click('.sp-tile.ready[data-lvl="2"][data-track="free"]', { force: true });
+  await tP.waitForSelector('.sp-tile.claimed[data-lvl="2"][data-track="free"]', { timeout: 8000 });
+  check(Number(dbVal(`select coins from public.sp_wallets where user_id = '${lenaId}'`)) === coins0 + 77, "„Abholen“ gibt die Belohnung (77 Coins)");
+
+  // Shop: mit Gems kaufen
+  psql(`select public.zwip_sp_money('${lenaId}', 0, 1000, 'e2e')`);
+  await tP.goto(`${BASE}?e2e=1#/shop`);
+  await tP.waitForSelector(".sp-grid .sp-card", { timeout: 8000 });
+  check((await tP.locator(".sp-grid .sp-card").count()) >= 6, "Tages-Shop mit Items");
+  check((await tP.textContent(".sp-prods")).includes("4,99"), "Echtgeld-Angebote mit Euro-Preis");
+  await tP.screenshot({ path: `${SHOTS}/sp-shop.png`, fullPage: true });
+  const gemBtn = tP.locator('.sp-grid [data-cur="gems"]').first();
+  const boughtId = await gemBtn.getAttribute("data-buy");
+  check((await gemBtn.textContent()).includes("€"), "Gem-Preis zeigt den Euro-Wert");
+  await gemBtn.click({ force: true });
+  await tP.waitForSelector(".sp-buy-modal [data-ok]");
+  await tP.click(".sp-buy-modal [data-ok]", { force: true });
+  await tP.waitForFunction((id) => !document.querySelector(`.sp-grid [data-buy="${id}"]`), boughtId, { timeout: 8000 });
+  check(dbVal(`select count(*) from public.sp_inventory where user_id = '${lenaId}' and item_id = '${boughtId}' and source = 'shop'`) === "1", "Item im Shop gekauft");
+
+  // Sammlung: Skin und Rahmen ausrüsten
+  psql(`insert into public.sp_inventory (user_id, item_id, source) values ('${lenaId}', 'sk_ocean', 'e2e'), ('${lenaId}', 'fr_neon', 'e2e') on conflict do nothing`);
+  await tP.goto(`${BASE}?e2e=1#/sammlung/skin`);
+  await tP.waitForSelector('[data-eq="sk_ocean"]', { timeout: 8000 });
+  await tP.click('[data-eq="sk_ocean"]', { force: true });
+  await tP.waitForFunction(() => document.body.classList.contains("has-skin"), null, { timeout: 5000 });
+  check(dbVal(`select skin from public.sp_equipped where user_id = '${lenaId}'`) === "sk_ocean", "Skin ausgerüstet – die App bekommt neue Farben");
+  await tP.goto(`${BASE}?e2e=1#/sammlung/frame`);
+  await tP.waitForSelector('[data-eq="fr_neon"]', { timeout: 8000 });
+  await tP.click('[data-eq="fr_neon"]', { force: true });
+  await tP.waitForSelector(".sp-preview .sp-frame", { timeout: 5000 });
+  await tP.screenshot({ path: `${SHOTS}/sp-sammlung.png`, fullPage: true });
+  await tP.goto(`${BASE}?e2e=1#/profil`);
+  await tP.waitForSelector(".pf-head .sp-frame", { timeout: 8000 });
+  check(true, "Rahmen erscheint im Profil");
+  await tP.reload();
+  await tP.waitForFunction(() => document.body.classList.contains("has-skin"), null, { timeout: 8000 });
+  check(true, "Skin bleibt nach dem Neuladen");
+  psql(`update public.sp_equipped set skin = null where user_id = '${lenaId}'`);
+
   // Daten herunterladen und Konto löschen (neues Konto)
   const DEL = await newPage();
   await DEL.page.goto(`${BASE}?e2e=1`);
@@ -1657,7 +1740,7 @@ try {
   // ================= SCHMALE HANDYS (360 px) =================
   await tP.setViewportSize({ width: 360, height: 740 });
   const overflow = [];
-  for (const r of ["start", "spielen", "minigames", "minigames/memory", "ranglisten/welt", "ranglisten/minigames/memory", "ranglisten/crew", "ranglisten/clans", "ranglisten/welt", "clan", "clan/chat", "clan/mitglieder", "clan/einstellungen", "freunde", "profil", "rechtliches/datenschutz", "rechtliches/impressum"]) {
+  for (const r of ["start", "spielen", "minigames", "minigames/memory", "ranglisten/welt", "ranglisten/minigames/memory", "ranglisten/crew", "ranglisten/clans", "ranglisten/welt", "clan", "clan/chat", "clan/mitglieder", "clan/einstellungen", "freunde", "profil", "pass", "shop", "sammlung", "rechtliches/datenschutz", "rechtliches/impressum"]) {
     await tP.goto(`${BASE}?e2e=1#/${r}`);
     await tP.waitForSelector(".tabbar");
     await tP.waitForTimeout(500);

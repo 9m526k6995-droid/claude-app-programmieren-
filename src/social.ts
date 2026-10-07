@@ -3,6 +3,7 @@
 
 import { authedRpc } from "./auth";
 import type { TaskResult } from "./trophies";
+import type { SeasonPass, SeasonPing, Shop, Cosmetics, Equipped, ItemKind, Item } from "./passKit";
 
 export interface PlayerInfo {
   username: string;
@@ -182,6 +183,31 @@ const MESSAGES: Record<string, string> = {
   invalid_report: "Ungültige Meldung.",
   not_admin: "Dafür brauchst du Admin-Rechte.",
   setup_missing: "Die Datenbank ist noch nicht auf dem neuesten Stand.",
+  reward_locked: "Diese Stufe hast du noch nicht erreicht.",
+  premium_required: "Dafür brauchst du den Season Pass.",
+  already_claimed: "Schon abgeholt ✓",
+  invalid_reward: "Diese Belohnung gibt es nicht.",
+  not_in_shop: "Das gibt es heute nicht im Shop.",
+  already_owned: "Hast du schon ✓",
+  not_enough_coins: "Dafür hast du nicht genug Coins.",
+  not_enough_gems: "Dafür hast du nicht genug Gems.",
+  invalid_currency: "So kann man das nicht bezahlen.",
+  payments_unavailable: "Käufe mit echtem Geld kommen bald.",
+  product_not_found: "Dieses Angebot gibt es nicht mehr.",
+  not_owned: "Das hast du noch nicht.",
+  invalid_kind: "Ungültige Art.",
+  season_not_found: "Diese Season gibt es nicht.",
+  season_overlap: "Die Season überschneidet sich mit einer anderen.",
+  invalid_weeks: "Eine Season dauert 1 bis 26 Wochen.",
+  invalid_date: "Ungültiges Datum.",
+  invalid_name: "Der Name darf 1–40 Zeichen haben.",
+  invalid_item_id: "Die ID darf nur a–z, 0–9 und _ enthalten (2–40 Zeichen).",
+  invalid_item_data: "Die Item-Daten passen nicht (Farben als #RRGGBB, kurze Emojis/Texte).",
+  invalid_rarity: "Ungültige Seltenheit.",
+  item_not_found: "Dieses Item gibt es nicht.",
+  exclusive_item: "Exklusive Season-Items können nicht in den Shop.",
+  invalid_amount: "Ungültige Menge oder ungültiger Preis.",
+  invalid_setting: "Ungültige Einstellung.",
   network: "Keine Verbindung zum Server. Prüfe dein Internet.",
   unknown: "Da ist etwas schiefgelaufen. Bitte versuch es nochmal.",
 };
@@ -578,3 +604,81 @@ export const savePushSub = (endpoint: string, p256dh: string, auth: string, tz: 
   call<PushSettings>("save_push_sub", { p_endpoint: endpoint, p_p256dh: p256dh, p_auth: auth, p_tz: tz, p_hour: hour });
 export const removePushSub = (endpoint: string | null) => call<PushSettings>("remove_push_sub", { p_endpoint: endpoint });
 export const markDailyPlayed = (day: number, streak: number) => call<null>("mark_daily_played", { p_day: day, p_streak: streak });
+
+// ---------- Season Pass, Shop, Sammlung (supabase/seasonpass.sql) ----------
+
+export const getSeasonPass = () => call<SeasonPass>("get_season_pass");
+export const claimSeasonReward = (level: number | null = null, track: "free" | "premium" | null = null) =>
+  call<SeasonPass>("claim_season_reward", { p_level: level, p_track: track });
+export const getSeasonPing = () => call<SeasonPing>("get_season_ping");
+export const getShop = () => call<Shop>("get_shop");
+export const buyShopItem = (item: string, currency: "coins" | "gems") => call<Shop>("buy_shop_item", { p_item: item, p_currency: currency });
+export const buyProductTest = (product: string) => call<Shop & { purchase_id: string; product: string }>("buy_product_test", { p_product: product });
+export const getMyCosmetics = () => call<Cosmetics>("get_my_cosmetics");
+export const equipCosmetic = (kind: Exclude<ItemKind, "emote">, item: string | null) => call<Cosmetics>("equip_cosmetic", { p_kind: kind, p_item: item });
+export const getPlayerCosmetics = (name: string) => call<Equipped>("get_player_cosmetics", { p_username: name });
+export const claimReferral = (name: string) => call<{ ok: boolean }>("claim_referral", { p_username: name });
+
+export interface AdminSeason {
+  id: number;
+  num: number;
+  name: string;
+  starts_at: string;
+  ends_at: string;
+  levels: number;
+  level_xp: number;
+  players: number;
+  premium: number;
+  rewards: number;
+}
+export interface AdminShopRow {
+  item_id: string;
+  price_coins: number | null;
+  price_gems: number | null;
+  always: boolean;
+  active: boolean;
+  today: boolean;
+}
+export interface AdminProduct {
+  id: string;
+  name: string;
+  price_cents: number;
+  gems: number;
+  coins: number;
+  item_ids: string[];
+  once: boolean;
+  active: boolean;
+  apple_id: string | null;
+  google_id: string | null;
+}
+export interface AdminPassOverview {
+  current: number;
+  seasons: AdminSeason[];
+  items: (Item & { active: boolean; owners: number })[];
+  shop: AdminShopRow[];
+  products: AdminProduct[];
+  settings: { test_purchases: "off" | "admins" | "all" };
+  stats: { test_purchases: number; real_purchases: number; real_revenue_cents: number };
+}
+export interface AdminReward {
+  level: number;
+  track: "free" | "premium";
+  item_id: string | null;
+  coins: number;
+  gems: number;
+}
+export const adminPassOverview = () => call<AdminPassOverview>("admin_sp_overview");
+export const adminPassRewards = (season: number) => call<AdminReward[]>("admin_sp_rewards", { p_season: season });
+export const adminPassSetReward = (season: number, level: number, track: string, item: string | null, coins: number, gems: number) =>
+  call<AdminReward[]>("admin_sp_set_reward", { p_season: season, p_level: level, p_track: track, p_item: item, p_coins: coins, p_gems: gems });
+export const adminPassCreateSeason = (name: string, startsAt: string, weeks: number) =>
+  call<AdminPassOverview>("admin_sp_create_season", { p_name: name, p_starts_at: startsAt, p_weeks: weeks });
+export const adminPassUpdateSeason = (id: number, name: string, endsAt: string) =>
+  call<AdminPassOverview>("admin_sp_update_season", { p_id: id, p_name: name, p_ends_at: endsAt });
+export const adminPassSaveItem = (id: string, kind: string, name: string, rarity: string, data: unknown, active: boolean) =>
+  call<AdminPassOverview>("admin_sp_save_item", { p_id: id, p_kind: kind, p_name: name, p_rarity: rarity, p_data: data, p_active: active });
+export const adminPassSetShop = (item: string, coins: number | null, gems: number | null, always: boolean, active: boolean) =>
+  call<AdminPassOverview>("admin_sp_set_shop", { p_item: item, p_price_coins: coins, p_price_gems: gems, p_always: always, p_active: active });
+export const adminPassSetProduct = (id: string, name: string, priceCents: number, gems: number, coins: number, active: boolean) =>
+  call<AdminPassOverview>("admin_sp_set_product", { p_id: id, p_name: name, p_price_cents: priceCents, p_gems: gems, p_coins: coins, p_active: active });
+export const adminPassSetSetting = (key: string, value: string) => call<AdminPassOverview>("admin_sp_set_setting", { p_key: key, p_value: value });

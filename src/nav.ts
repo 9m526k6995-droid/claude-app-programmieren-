@@ -41,6 +41,8 @@ export function tabFor(parts: string[]): TabId | null {
   if (top === "pfad") return null;
   if (top === "freunde" || top === "clan") return "social";
   if (top === "einstellungen") return "profil";
+  if (top === "pass" || top === "shop") return "start";
+  if (top === "sammlung") return "profil";
   return (TABS.find((t) => t.id === top)?.id ?? "start") as TabId;
 }
 
