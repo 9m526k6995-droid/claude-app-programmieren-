@@ -648,7 +648,7 @@ async function explainGame(holder: HTMLElement, g: MicroGame, label: string) {
   ok.disabled = true;
   ok.classList.add("go");
   intro.querySelector(".explain-count")!.classList.add("hidden");
-  sfx.tick();
+  sfx.zwip();
   await sleep(220);
 }
 
@@ -1252,11 +1252,17 @@ function settingsScreen() {
 
 function soundTogglesHtml(): string {
   const canVibrate = typeof navigator !== "undefined" && typeof navigator.vibrate === "function";
-  return `<label class="toggle"><input type="checkbox" id="set-sound" ${S.muted ? "" : "checked"}> Ton an</label>
+  return `<label class="toggle"><input type="checkbox" id="set-sound" ${S.muted ? "" : "checked"}> Ton an <button class="link-btn inline" type="button" id="set-jingle">🔊 ZWIP-Sound anhören</button></label>
       <label class="toggle"><input type="checkbox" id="set-vibrate" ${S.vibrate ? "checked" : ""} ${canVibrate ? "" : "disabled"}> Vibration an${canVibrate ? "" : ` <small class="muted">(auf diesem Gerät nicht möglich)</small>`}</label>`;
 }
 
 function bindSoundToggles(page: HTMLElement) {
+  page.querySelector("#set-jingle")?.addEventListener("click", (e) => {
+    e.preventDefault();
+    if (S.muted) return toast("Erst den Ton anschalten 🔇");
+    sfx.unlock();
+    sfx.jingle();
+  });
   page.querySelector<HTMLInputElement>("#set-sound")?.addEventListener("change", (e) => {
     S.muted = !(e.target as HTMLInputElement).checked;
     sfx.setMuted(S.muted);
@@ -1912,7 +1918,7 @@ async function submitTrophyRun() {
     const rank = (id: string) => LEAGUES.findIndex((l) => l.id === id);
     if (rank(res.new_league) > rank(res.old_league)) {
       await sleep(500);
-      sfx.win();
+      sfx.jingle();
       await leagueUp(res.new_league, res.new_trophies);
     } else if (rank(res.new_league) < rank(res.old_league)) {
       sfx.bad();
@@ -1939,6 +1945,8 @@ function showStart(mode?: "register" | "login") {
   document.querySelector(".modal-bg")?.remove();
   const hooks: Parameters<typeof renderStart>[1] = {
     onGuest: () => {
+      sfx.unlock();
+      sfx.jingle();
       S.guest = true;
       save();
       if (!location.hash || routeParts()[0] === "rechtliches") replaceRoute("start");
@@ -1965,6 +1973,8 @@ function showStart(mode?: "register" | "login") {
         S.guest = false;
         save();
       }
+      sfx.unlock();
+      sfx.jingle();
       toast(fresh ? "Account erstellt – viel Spaß! 🎉" : "Angemeldet ✌️");
     },
   };
@@ -1986,6 +1996,19 @@ onAuthChange((s) => {
     showStart();
   }
 });
+
+// Begrüßung: Beim ersten Tippen in einer Sitzung (Browser erlauben Ton erst nach einer Berührung) kommt der ZWIP-Sound –
+// außer man startet mit diesem Tippen gleich ein Spiel, dann kommt dort das „zwiiip“.
+document.addEventListener(
+  "pointerdown",
+  (e) => {
+    if (S.muted || !canPlay()) return;
+    if ((e.target as HTMLElement).closest("[data-act], .explain-ok, button, a, input")) return;
+    sfx.unlock();
+    sfx.jingle();
+  },
+  { once: true, capture: true },
+);
 
 async function boot() {
   app.innerHTML = `<div class="screen boot" aria-busy="true"><h1 class="logo" aria-label="ZWIP"><span>Z</span><span>W</span><span>I</span><span>P</span></h1></div>`;
