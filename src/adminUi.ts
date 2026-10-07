@@ -22,6 +22,7 @@ import {
   type AdminPlayer,
 } from "./social";
 import { GAME_BY_ID } from "./games";
+import { renderPassAdmin } from "./passAdminUi";
 
 const errMsg = (e: unknown) => (e instanceof SocialError ? e.message : "Da ist etwas schiefgelaufen.");
 const when = (iso: string) => new Date(iso).toLocaleString("de-DE", { day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" });
@@ -32,13 +33,14 @@ const FLAG: Record<string, string> = {
   "soft:perfect_run": "Sehr langer, perfekter Lauf",
 };
 
-export async function renderAdmin(page: HTMLElement, tab: string | undefined, go: (path: string) => void) {
-  const t = tab === "spieler" || tab === "filter" ? tab : "meldungen";
+export async function renderAdmin(page: HTMLElement, tab: string | undefined, go: (path: string) => void, sub?: string, extra?: string) {
+  const t = tab === "spieler" || tab === "filter" || tab === "shop" ? tab : "meldungen";
   page.innerHTML = `<div id="adm-over" class="adm-over"><div class="empty">Lädt…</div></div>
-    <nav class="seg" aria-label="Moderation">
+    <nav class="seg seg4" aria-label="Moderation">
       <a href="#/admin" class="${t === "meldungen" ? "on" : ""}">Meldungen</a>
       <a href="#/admin/spieler" class="${t === "spieler" ? "on" : ""}">Spieler</a>
       <a href="#/admin/filter" class="${t === "filter" ? "on" : ""}">Filter</a>
+      <a href="#/admin/shop" class="${t === "shop" ? "on" : ""}">Pass & Shop</a>
     </nav>
     <div id="adm-body"><div class="empty">Lädt…</div></div>`;
   const over = page.querySelector<HTMLElement>("#adm-over")!;
@@ -59,7 +61,8 @@ export async function renderAdmin(page: HTMLElement, tab: string | undefined, go
     page.innerHTML = `<div class="inline-error" role="alert">${esc(errMsg(e))}</div><p class="muted">Diese Seite ist nur für Admins.</p>`;
     return;
   }
-  const refresh = () => renderAdmin(page, tab, go);
+  const refresh = () => renderAdmin(page, tab, go, sub, extra);
+  if (t === "shop") return renderPassAdmin(body, sub, extra);
   if (t === "spieler") return renderPlayers(body, refresh);
   if (t === "filter") return renderWords(body);
   return renderReports(body, refresh);

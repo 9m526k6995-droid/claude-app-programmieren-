@@ -130,9 +130,14 @@ create or replace function public.export_my_data()
 returns jsonb
 language plpgsql security definer set search_path = ''
 as $$
-declare me uuid := public.zwip_me();
+declare me uuid := public.zwip_me(); sp jsonb := null;
 begin
+  -- Season Pass, Käufe & Sammlung (supabase/seasonpass.sql), falls eingerichtet
+  if to_regprocedure('public.zwip_sp_export(uuid)') is not null then
+    execute 'select public.zwip_sp_export($1)' into sp using me;
+  end if;
   return jsonb_build_object(
+    'season_pass', sp,
     'exported_at', now(),
     'account', (select jsonb_build_object('email', u.email, 'created_at', u.created_at) from auth.users u where u.id = me),
     'profile', (select to_jsonb(p) - 'avatar' || jsonb_build_object('has_avatar', p.avatar is not null) from public.profiles p where p.id = me),

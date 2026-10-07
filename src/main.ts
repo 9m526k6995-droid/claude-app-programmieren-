@@ -79,6 +79,7 @@ import { openTour, guestWallHtml, guestBannerHtml } from "./onboarding";
 import { pushSettingsHtml, mountPushSettings, dropPushOnLogout } from "./push";
 import { mountMyProfile, openPlayerProfile } from "./profileUi";
 import { routeParts, go, shellHtml, replaceRoute, type TabId } from "./nav";
+import { renderPass, renderShop, renderCollection, mountPassCard, seasonPing, playVictory, passAfterLogin, resetPass } from "./passUi";
 import {
   minigameGridHtml,
   minigameDetailHtml,
@@ -401,7 +402,7 @@ function renderRoute() {
   if (parts[0] !== "pfad") lastRoute = parts.join("/");
   window.scrollTo(0, 0);
   if (isGuest()) {
-    const wall: Record<string, string> = { freunde: "Freunde", clan: "Clans", admin: "Moderation", pfad: "Der Trophäen-Modus" };
+    const wall: Record<string, string> = { freunde: "Freunde", clan: "Clans", admin: "Moderation", pfad: "Der Trophäen-Modus", pass: "Der Season Pass", shop: "Der Shop", sammlung: "Deine Sammlung" };
     const w = wall[parts[0]] ?? (parts[0] === "ranglisten" && parts[1] !== "crew" ? "Die Rangliste" : "");
     if (w) {
       const tab: TabId = parts[0] === "freunde" ? "freunde" : parts[0] === "clan" ? "clan" : parts[0] === "ranglisten" ? "ranglisten" : "spielen";
@@ -426,9 +427,19 @@ function renderRoute() {
     case "rechtliches":
       return legalScreen(parts[1]);
     case "admin":
-      return void renderAdmin(shell(null, "Moderation", "", { back: "profil" }), parts[1], (path) => navigate(path));
+      return void renderAdmin(shell(null, "Moderation", "", { back: "profil" }), parts[1], (path) => navigate(path), parts[2], parts[3]);
     case "profil":
       return profileScreen();
+    case "pass":
+      return void renderPass(shell("start", "Season Pass", "", { back: "start", cls: "sp-shell" }), myProfile?.username ?? undefined);
+    case "shop":
+      return void renderShop(shell("start", "Shop", "", { back: "start", cls: "sp-shell" }));
+    case "sammlung":
+      return void renderCollection(
+        shell("profil", "Sammlung", "", { back: "profil", cls: "sp-shell" }),
+        { name: myProfile?.username ?? undefined, avatar: cachedAvatar(currentUser()?.id) },
+        parts[1],
+      );
     case "pfad":
       return void openPath();
     default:
@@ -491,11 +502,15 @@ function startScreen() {
       <p class="tagline">10 Blitz-Challenges · jeden Tag neu</p>
     </section>
     <section class="start-main">${main}</section>
+    ${isGuest() ? "" : `<section class="sp-start" id="sp-start"></section>`}
     <section class="week-wrap">
       <div class="week-head"><h2 class="sec-title">Diese Woche</h2><span class="streak-mini ${streak ? "on" : ""}">📆 ${streak} ${streak === 1 ? "Tag" : "Tage"} am Stück</span></div>
       <div class="week" aria-label="Diese Woche">${weekStrip(t)}</div>
     </section>`,
   );
+
+  const spStart = document.getElementById("sp-start");
+  if (spStart) void mountPassCard(spStart);
 
   if (played && !pending) {
     timers.push(
@@ -857,7 +872,7 @@ async function startRun(mode: Mode, opts: RunOpts = {}) {
   if (mode === "daily") {
     recordDaily(S, t, result);
     // Server weiß dann: heute keine Erinnerung mehr nötig
-    if (currentUser()) void markDailyPlayed(t, currentStreak(S, t)).catch(() => {});
+    if (currentUser()) void markDailyPlayed(t, currentStreak(S, t)).then(() => seasonPing(1600)).catch(() => {});
   } else if (mode === "free") {
     S.best.free = Math.max(S.best.free, total);
   }
@@ -974,6 +989,7 @@ function results(d: ResultData) {
     if (d.vs ? won : score >= 680 || d.endlessBest) {
       sfx.win();
       confetti();
+      playVictory();
     }
   }, 1000);
 
@@ -1178,6 +1194,14 @@ function profileScreen() {
     "profil",
     "Profil",
     `<div class="pf" id="pf-root" aria-busy="true"><div class="empty">Lädt…</div></div>
+    <section class="card-sec sp-profile-links">
+      <h2 class="sec-title">Season Pass & Sammlung</h2>
+      <div class="pf-list">
+        <a class="pf-row" href="#/pass"><span aria-hidden="true">⭐</span><b>Season Pass</b><i aria-hidden="true">›</i></a>
+        <a class="pf-row" href="#/sammlung"><span aria-hidden="true">🎒</span><b>Sammlung – Skins, Rahmen & mehr ausrüsten</b><i aria-hidden="true">›</i></a>
+        <a class="pf-row" href="#/shop"><span aria-hidden="true">🛒</span><b>Shop</b><i aria-hidden="true">›</i></a>
+      </div>
+    </section>
     <section class="card-sec settings">
       <h2 class="sec-title">Einstellungen</h2>
       <label class="lbl" for="set-name">Name für Duell-Links</label>
@@ -1450,6 +1474,7 @@ function showMinigameResult(v: MgResultView) {
   if (!v.saving && v.record && v.stage > 0) {
     sfx.win();
     confetti();
+    playVictory();
   }
 }
 
@@ -1459,6 +1484,7 @@ async function submitMinigame(show = true) {
   try {
     const res = await finishMinigameRun(p.runId, p.stage, p.totalMs, p.steps);
     mgPending = null;
+    if (!res.flagged && p.stage > 0) seasonPing();
     const best: MinigameBest = {
       game: p.game,
       best_score: res.best_score ?? scoreFromStage(res.best_stage),
@@ -1859,6 +1885,7 @@ async function submitTrophyRun() {
     const res = await finishTrophyRound(start.round_id, tasks);
     trophyRun = null;
     renderTrophyResult(app, { server: res, local, startTrophies: start.trophies }, h);
+    seasonPing(1400);
     const uid = currentUser()?.id;
     if (myProfile) {
       setCachedProfile(uid, {
@@ -1881,6 +1908,7 @@ async function submitTrophyRun() {
     } else if (res.delta > 0) {
       sfx.win();
       if (res.delta >= 100) confetti();
+      playVictory();
     } else if (res.delta < 0) {
       sfx.bad();
     }
@@ -1923,6 +1951,7 @@ function showStart(mode?: "register" | "login") {
       openPendingClan();
       startBadges();
       void ensureTerms().then(maybeTour);
+      void passAfterLogin();
       if (S.guest) {
         S.guest = false;
         save();
@@ -1942,6 +1971,7 @@ onAuthChange((s) => {
     mgBests = null;
     stopBadges();
     resetMyCountry();
+    resetPass();
     myTerms = null;
     // Nach dem Abmelden startet die nächste Anmeldung wieder auf „Start“
     if (location.hash) replaceRoute("start");
@@ -1959,6 +1989,7 @@ async function boot() {
     openPendingClan();
     startBadges();
     void ensureTerms().then(maybeTour);
+    void passAfterLogin();
   } else if (routeParts()[0] === "rechtliches") legalScreen(routeParts()[1]);
   else if (S.guest) {
     renderRoute();

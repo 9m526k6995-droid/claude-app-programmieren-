@@ -417,3 +417,50 @@ test("Länder: Flaggen, deutsche Namen, Suche", () => {
   assert.equal(searchCountries("nl")[0].code, "NL", "Suche nach Code");
   assert.ok(isCountry("TR") && !isCountry("ZZ") && !isCountry(null));
 });
+
+// ---------- Season Pass & Shop (passKit) ----------
+import { euro, num, gemsInEuro, levelOf, timeLeft, safeColor, safeEmoji, emojiList, itemIcon, nameStyle, rewardInner } from "../src/passKit";
+
+test("Euro-Preise werden deutsch angezeigt", () => {
+  assert.equal(euro(499).replace(/\s/g, " "), "4,99 €");
+  assert.equal(euro(99).replace(/\s/g, " "), "0,99 €");
+  assert.equal(num(1100), "1.100");
+});
+
+test("Gems zeigen immer ungefähr den Euro-Wert", () => {
+  assert.equal(gemsInEuro(500).replace(/\s/g, " "), "4,99 €");
+  assert.equal(gemsInEuro(50).replace(/\s/g, " "), "0,50 €");
+  assert.equal(gemsInEuro(100, [{ id: "gems_m", gems: 1000, price_cents: 999 }]).replace(/\s/g, " "), "1,00 €");
+});
+
+test("Stufe aus XP: 0 bis 40, nie mehr", () => {
+  assert.equal(levelOf(0, 1500, 40), 0);
+  assert.equal(levelOf(1499, 1500, 40), 0);
+  assert.equal(levelOf(1500, 1500, 40), 1);
+  assert.equal(levelOf(1500 * 39 + 1, 1500, 40), 39);
+  assert.equal(levelOf(10_000_000, 1500, 40), 40);
+});
+
+test("Restzeit-Text", () => {
+  const now = Date.UTC(2026, 9, 7, 12, 0);
+  assert.equal(timeLeft(new Date(now + 3 * 86400000 + 4 * 3600000).toISOString(), now), "noch 3 T 4 Std");
+  assert.equal(timeLeft(new Date(now + 5 * 3600000 + 12 * 60000).toISOString(), now), "noch 5 Std 12 Min");
+  assert.equal(timeLeft(new Date(now - 1000).toISOString(), now), "endet gleich");
+});
+
+test("Item-Daten können kein HTML/CSS einschleusen", () => {
+  assert.equal(safeColor("#12abEF"), "#12abEF");
+  assert.equal(safeColor("red;background:url(x)"), "#a45cff");
+  assert.equal(safeEmoji("🔥"), "🔥");
+  assert.equal(safeEmoji("<img src=x>"), "✨");
+  assert.deepEqual(emojiList(["⭐", "<b>", "✨"]), ["⭐", "✨"]);
+  const html = itemIcon({ id: "x", kind: "skin", name: "x", rarity: "rare", data: { a: "#000000;}</style>", b: "#ffffff" } });
+  assert.ok(!html.includes("</style>"));
+  assert.ok(!nameStyle({ id: "n", kind: "namecolor", name: "n", rarity: "rare", data: { c1: "url(javascript:x)" } }).includes("url("));
+});
+
+test("Belohnung ohne Item zeigt Coins oder Gems", () => {
+  assert.match(rewardInner({ item: null, coins: 75, gems: 0 }).label, /75 Coins/);
+  assert.match(rewardInner({ item: null, coins: 0, gems: 20 }).label, /20 Gems/);
+  assert.match(rewardInner({ item: { id: "a", kind: "avatar", name: "Fuchs <3", rarity: "common", data: { e: "🦊" } }, coins: 0, gems: 0 }).label, /Fuchs &lt;3/);
+});

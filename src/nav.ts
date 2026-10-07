@@ -30,6 +30,8 @@ export function tabFor(parts: string[]): TabId | null {
   const top = parts[0];
   if (top === "minigames") return "spielen";
   if (top === "pfad") return null;
+  if (top === "pass" || top === "shop") return "start";
+  if (top === "sammlung") return "profil";
   return (TABS.find((t) => t.id === top)?.id ?? "start") as TabId;
 }
 
